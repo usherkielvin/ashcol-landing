@@ -1,32 +1,77 @@
-# React + TypeScript + Vite
+<p align="center">
+  <img src="public/ash-logo.png" alt="Ashcol Corporation Logo" width="240" />
+</p>
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+<h1 align="center">ASHCOL PORTAL</h1>
+<p align="center"><strong>Enterprise Field Operations & Service Management Platform</strong></p>
+<p align="center"><em>Ashcol Airconditioning Corporation • Capstone Project</em></p>
 
-Currently, two official plugins are available:
+---
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## 📌 Overview
 
-## React Compiler
+**ASHCOL PORTAL** is the central digital operating system for **Ashcol Airconditioning Corporation**. It unifies field dispatch, multi-branch service coordination, installer logistics, warranty registration, customer ticketing, and operational records into an interconnected, real-time web platform.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+Designed for high reliability and multi-branch scalability, the platform coordinates nationwide branch operations across **Taguig (Sales & Services)**, **Calauan**, **Silang**, **Dasmariñas**, **Pampanga**, **Bulacan**, **Rizal**, and **Candelaria**.
 
-## Expanding the Oxlint configuration
+---
 
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
+## ⚡ Core Operational Capabilities
 
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+### 1. 📋 Service Relays & Smart Ticketing
+- **Live Ticket Lifecycle**: Full tracking across Intake, Scheduled, Dispatched, In-Progress, and Completed workflows.
+- **Multi-Service Handling**: Native support for Survey & Installation, Cleaning/PMS, Checkup, Repair, Backjob, Dismantling, and Mounting.
+- **Store & Dealer Management**: Searchable store catalog with strict duplicate prevention and encoded-by audit trails.
+- **Warranty Registration**: Direct integration linking installation tickets with warranty activation records.
+
+### 2. 🚛 Line-Up & Field Logistics Planner
+- **Fleet Dispatch Engine**: Vehicle trip planner mapping drivers, service technicians, and route districts.
+- **Smart Roster Derivation**: Dynamic employee resolution extracting technician rosters scoped strictly to their respective branches.
+- **One-Click Showcase & Exports**: High-definition presentation modal and instant PDF schedule generation for daily field briefings.
+
+### 3. 📦 Permanent Historical Archives
+- **Immutable Service Records**: Protected audit logs capturing completed installations and repairs with zero accidental data loss.
+- **Multi-Status Backfilling**: Automatic aggregation of all completed service types, collection details, and mode of payments.
+- **Granular Branch Filtering**: Instant lookup across active and historical monthly accounting periods.
+
+### 4. 👥 Workforce & Enterprise Operations
+- **Branch Scope Isolation**: Strict segregation between commercial Sales departments and technical Services divisions.
+- **Integrated Operations Forms**: Digital intake for surveys, repair authorizations, and client satisfaction certificates.
+- **Role-Based Access Control (RBAC)**: Fine-grained permissions for Administrators, Branch Managers, Officers-in-Charge (OIC), Coordinators, and Technicians.
+
+---
+
+## 🛠️ Architecture & Tech Stack
+
+| Layer | Technology |
+| :--- | :--- |
+| **Framework** | [React 19](https://react.dev/) with [TypeScript 5](https://www.typescriptlang.org/) |
+| **Build System** | [Vite 8](https://vitejs.dev/) with SWC compiler optimization |
+| **Styling & Design System** | Modern Glassmorphism & High-Contrast Dark/Light Themes via [Tailwind CSS](https://tailwindcss.com/) |
+| **Iconography** | [Lucide React](https://lucide.dev/) |
+| **Security & Auth** | JWT Authentication, Enterprise RBAC & Google Identity Services |
+| **Data Synchronization** | Multi-tier Local Cache + Broadcast Channels for cross-tab realtime updates |
+| **Document Generation** | [jsPDF](https://github.com/parallax/jsPDF) & [jspdf-autotable](https://github.com/simonbengtsson/jsPDF-AutoTable) |
+
+---
+
+## 🚀 Deployment & Operations
+
+```bash
+# Install dependencies
+npm install
+
+# Start development server
+npm run dev
+
+# Build production bundle
+npm run build
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+---
+
+## 🏢 Project Collaboration & Licensing
+
+Developed for **Ashcol Airconditioning Corporation** as an academic Capstone Project. All rights reserved.
+
+*© 2026 Ashcol Airconditioning Corporation.*

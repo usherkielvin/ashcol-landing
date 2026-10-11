@@ -1,0 +1,1450 @@
+// @ts-nocheck
+import { useState, useRef, useEffect, cloneElement, isValidElement, Suspense } from 'react'
+import { Outlet, Link, useLocation, Navigate, useNavigate } from 'react-router-dom'
+import { useTheme } from '../contexts/ThemeContext'
+import AshcolLoader from '../components/AshcolLoader'
+import {
+  Ticket as TicketIcon,
+  Menu, LogOut, X, Sun, Moon,
+  ChevronRight, ChevronLeft, UserCircle, ChevronDown,
+  PanelLeftOpen, ClipboardList, Search,
+  User, Radio, CalendarDays, UserCog, TrendingUp, MapPin, Archive,
+  Building2, Calendar, Landmark, Wifi, CircleDollarSign, ListOrdered,
+  LayoutDashboard, Route, Truck, ClipboardCheck, PhoneCall, Percent, Wallet, CalendarPlus,
+  History, Shield, Settings, Banknote, Megaphone
+} from 'lucide-react'
+import {
+  MdOutlineConfirmationNumber,
+  MdOutlineDashboard,
+  MdOutlineLocalActivity,
+  MdOutlineAssignmentInd,
+  MdOutlineCalendarMonth,
+  MdOutlineArchive,
+  MdOutlineAssignmentTurnedIn,
+  MdOutlineEventAvailable,
+  MdOutlinePeopleAlt,
+  MdOutlineDescription,
+  MdOutlinePlaylistAdd,
+  MdOutlineAltRoute,
+  MdOutlineChecklist,
+  MdOutlineInsertChartOutlined,
+  MdOutlineAccountBalanceWallet,
+  MdOutlinePhone,
+  MdOutlinePhoneInTalk,
+  MdMenuBook,
+  MdOutlinePerson,
+  MdOutlineStorefront,
+} from 'react-icons/md'
+import { FiMinus, FiPlus } from 'react-icons/fi'
+import { DailyTransactionsIcon, ExpensesIcon, CollectionsIcon, CommissionsIcon, CashAdvanceIcon, PayoutsIcon } from '../components/icons/FinanceIcons'
+import { useAuth } from '../contexts/AuthContext'
+import { API_BASE_URL, formatRole, formatPersonName, getPortalHomePath, isPortalAdmin, isSalesWorkspaceUser, isServiceWorkspaceUser, findBranchListEntry, formatBranchName, canMemberAccessRelaysAndTicketCreation, canMemberAccessDdrm, isSystemAdmin, isPortalStaffUser, isWarrantyRegistrar, getUserViewBranchIds, isBranchReadOnlyForUser, branchScopesMatch, isFranchiseBranch } from '../utils/api'
+import UserAvatar from '../components/UserAvatar'
+import MessagesDropdown from '../components/MessagesDropdown'
+import NotificationsDropdown from '../components/NotificationsDropdown'
+import AdminBroadcastModal from '../components/AdminBroadcastModal'
+import NotificationDetailModal from '../components/NotificationDetailModal'
+import { useNotifications } from '../contexts/NotificationContext'
+import FloatingChatWindow from '../components/FloatingChatWindow'
+import { HEADER_MENU_OPENED_EVENT, broadcastHeaderMenuOpen } from '../utils/headerMenuCoordination'
+import { warmUpPortalRoutes, preloadPath } from '../utils/preloadHelper'
+import logoImg from '../assets/ash-logo.jpg'
+
+const normalizeBranchDisplayName = (branchId?: string | null, branchName?: string | null) => {
+  if (!branchId && !branchName) return null
+  const id = (branchId || '').toUpperCase()
+  const name = (branchName || '').trim()
+
+  const isServices = id.includes('SERVICE') || id.includes('SERVICES') || name.toUpperCase().includes('SERVICE')
+  if (id.includes('TAGUIG') || name.toUpperCase().includes('TAGUIG')) {
+    return isServices ? 'TAGUIG SERVICES' : 'TAGUIG SALES'
+  }
+
+  return formatBranchName(name || id)
+}
+
+const getBranchCode = (name: string) => {
+  if (!name) return ''
+  const upper = name.toUpperCase()
+  if (upper.includes('TAGUIG')) {
+    if (upper.includes('SERVICE')) return 'TS'
+    return 'TG'
+  }
+  if (upper.includes('BULACAN')) return 'BU'
+  const words = upper.split(/[\s-]+/).filter(Boolean)
+  if (words.length >= 2) {
+    return (words[0][0] + words[1][0]).substring(0, 2)
+  }
+  return upper.substring(0, 2)
+}
+
+
+interface BranchOption { id: string; name: string }
+
+type NavLinkDef = { name: string; path: string; icon: typeof TicketIcon; roles?: string[] }
+
+function buildNavGroups(navLinks: NavLinkDef[]) {
+  const findPath = (name: string) => navLinks.find(l => l.name === name)?.path ?? '#'
+  const hasLink = (name: string) => navLinks.some(l => l.name === name)
+
+  return [
+    {
+      title: 'Tickets',
+      Icon: MdOutlineConfirmationNumber,
+      subItems: [
+        { name: 'Relays', icon: <MdOutlineLocalActivity size={16} />, path: findPath('Relays') },
+        { name: 'Bookings', icon: <MdOutlineEventAvailable size={16} />, path: findPath('Bookings') },
+        { name: 'My Tickets', icon: <MdOutlineAssignmentInd size={16} />, path: findPath('My Tickets') },
+        { name: 'Schedules', icon: <MdOutlineCalendarMonth size={16} />, path: findPath('Schedules') },
+        { name: 'Archives', icon: <MdOutlineArchive size={16} />, path: findPath('Archives') },
+        { name: 'Registration', icon: <MdOutlineAssignmentTurnedIn size={16} />, path: findPath('Registration') },
+        { name: 'Happy Calls', icon: <MdOutlinePhoneInTalk size={16} />, path: findPath('Happy Calls') },
+      ].filter(s => s.path !== '#' || hasLink(s.name)),
+    },
+    {
+      title: 'Operations',
+      Icon: MdOutlinePeopleAlt,
+      subItems: [
+        { name: 'LINEUP', icon: <MdOutlinePlaylistAdd size={16} />, path: findPath('LINEUP') },
+        // { name: 'HRIS', icon: <MdOutlineDescription size={16} />, path: findPath('HRIS') },
+        { name: 'DDRM', icon: <MdOutlineAltRoute size={16} />, path: findPath('DDRM') },
+        { name: 'Request Forms', icon: <MdOutlineDescription size={16} />, path: findPath('Request Forms') },
+        // { name: 'Office tasks', icon: <MdOutlineChecklist size={16} />, path: findPath('Office tasks') },
+      ].filter(s => navLinks.some(l => l.path === s.path)),
+    },
+    {
+      title: 'Finance',
+      Icon: MdOutlineInsertChartOutlined,
+      subItems: [
+        { name: 'Daily Transactions', icon: <DailyTransactionsIcon size={16} />, path: findPath('Daily Transaction') },
+        { name: 'Expenses', icon: <ExpensesIcon size={16} />, path: findPath('Expense Records') },
+        { name: 'Collections', icon: <CollectionsIcon size={16} />, path: findPath('For Collections') },
+        { name: 'Commissions', icon: <CommissionsIcon size={16} />, path: findPath('Commissions') },
+        { name: 'Cash Advance', icon: <CashAdvanceIcon size={16} />, path: findPath('Cash Advance') },
+        { name: 'Payouts', icon: <PayoutsIcon size={16} />, path: findPath('Payouts') },
+        // { name: 'Bills', icon: <MdOutlineAccountBalanceWallet size={16} />, path: findPath('Bills') },
+        // { name: 'Telecoms', icon: <MdOutlinePhone size={16} />, path: findPath('Telecoms') },
+      ].filter(s => navLinks.some(l => l.path === s.path)),
+    },
+    {
+      title: 'Directory',
+      Icon: MdMenuBook,
+      subItems: [
+        { name: 'Members', icon: <MdOutlinePerson size={16} />, path: findPath('Members') },
+        { name: 'Vehicles', icon: <Truck size={16} />, path: findPath('Vehicles') },
+        { name: 'Branches', icon: <MdOutlineStorefront size={16} />, path: findPath('Directory') },
+      ].filter(s => navLinks.some(l => l.path === s.path)),
+    },
+  ].filter(g => g.subItems.length > 0)
+}
+
+function buildCollapsedNavItems(navLinks: NavLinkDef[]) {
+  const groups = buildNavGroups(navLinks)
+  const items: { key: string; name: string; path: string; icon: React.ReactNode; groupPaths?: string[] }[] = []
+
+  const covered = new Set(groups.flatMap(g => g.subItems.map(s => s.path)))
+  
+  for (const link of navLinks) {
+    const key = link.path
+    if (covered.has(key)) continue
+    const Icon = link.icon
+    items.push({
+      key: link.name,
+      name: link.name,
+      path: link.path,
+      icon: <Icon className="w-5 h-5 shrink-0" strokeWidth={2} />
+    })
+  }
+
+  for (const group of groups) {
+    if (group.subItems.length > 0) {
+      const firstSub = group.subItems[0]
+      const Icon = group.Icon
+      items.push({
+        key: group.title,
+        name: group.title,
+        path: firstSub.path,
+        icon: <Icon size={20} className="shrink-0" />,
+        groupPaths: group.subItems.map(s => s.path)
+      })
+    }
+  }
+
+  return items
+}
+
+export default function DashboardLayout() {
+  const isDesktop = typeof window !== 'undefined' ? window.innerWidth >= 768 : true
+  const [sidebarOpen, setSidebarOpen]           = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(isDesktop)
+  const [isHoverExpanded, setIsHoverExpanded]   = useState(false)
+  const [broadcastOpen, setBroadcastOpen]       = useState(false)
+  // navVisible lags behind sidebarCollapsed so text never renders mid-transition
+  // collapse → hide text immediately; expand → show text only after width finishes
+  const [navVisible, setNavVisible]             = useState(!isDesktop)
+  const [showCollapsedIcons, setShowCollapsedIcons] = useState(isDesktop)
+  const [profileOpen, setProfileOpen]           = useState(false)
+  const [headerBranchDropdownOpen, setHeaderBranchDropdownOpen] = useState(false)
+  const [openAccordion, setOpenAccordion]       = useState<string | null>(null)
+  const [activeSubItem, setActiveSubItem]        = useState<string | null>(null)
+  const profileRef = useRef<HTMLDivElement>(null)
+  const headerBranchRef = useRef<HTMLDivElement>(null)
+  const lastPathname = useRef<string | null>(null)
+  const hoverTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const navVisibleTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const hoverDebounce = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const location = useLocation()
+  const navigate = useNavigate()
+  const { theme, themeMode, setThemeMode } = useTheme()
+  const { user, logout } = useAuth()
+  const { openNotificationDetail } = useNotifications()
+  const getToken = () => localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+
+  // Deep-link from a push notification click with nowhere else to go — see sw.js/WebPushService.
+  useEffect(() => {
+    const params = new URLSearchParams(location.search)
+    const notificationId = params.get('notification')
+    if (!notificationId) return
+    openNotificationDetail(notificationId)
+    params.delete('notification')
+    const nextSearch = params.toString()
+    navigate({ pathname: location.pathname, search: nextSearch ? `?${nextSearch}` : '' }, { replace: true })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.search])
+
+  // Warm up and prefetch portal routes in background idle time so tab navigation is instant
+  useEffect(() => {
+    warmUpPortalRoutes()
+  }, [])
+
+  const isLight = theme === 'light'
+  const [branchLabel, setBranchLabel] = useState<string | null>(null)
+
+  const collapseSidebar = () => {
+    if (window.innerWidth < 768) return
+    if (hoverDebounce.current) clearTimeout(hoverDebounce.current)
+    if (hoverTimeout.current) clearTimeout(hoverTimeout.current)
+    if (navVisibleTimeout.current) clearTimeout(navVisibleTimeout.current)
+    setIsHoverExpanded(false)
+    setNavVisible(false)
+    setShowCollapsedIcons(false)
+    setSidebarCollapsed(true)
+    navVisibleTimeout.current = setTimeout(() => {
+      setShowCollapsedIcons(true)
+    }, 120)
+  }
+
+  const handleMouseEnter = () => {
+    if (window.innerWidth < 768) return
+    if (hoverDebounce.current) clearTimeout(hoverDebounce.current)
+    if (hoverTimeout.current) clearTimeout(hoverTimeout.current)
+    if (navVisibleTimeout.current) clearTimeout(navVisibleTimeout.current)
+
+    hoverDebounce.current = setTimeout(() => {
+      if (sidebarCollapsed || !navVisible) {
+        setShowCollapsedIcons(false)
+        setSidebarCollapsed(false)
+        setIsHoverExpanded(true)
+        setNavVisible(true)
+      }
+    }, 40)
+  }
+
+  const handleMouseLeave = () => {
+    if (window.innerWidth < 768) return
+    if (hoverDebounce.current) clearTimeout(hoverDebounce.current)
+    if (hoverTimeout.current) clearTimeout(hoverTimeout.current)
+
+    hoverDebounce.current = setTimeout(() => {
+      if (isHoverExpanded) {
+        setNavVisible(false)
+        if (navVisibleTimeout.current) clearTimeout(navVisibleTimeout.current)
+        hoverTimeout.current = setTimeout(() => {
+          setSidebarCollapsed(true)
+          setIsHoverExpanded(false)
+          setShowCollapsedIcons(true)
+        }, 120)
+      }
+    }, 100)
+  }
+
+  const isPortalAdminUser = isPortalAdmin(user?.role)
+  const userViewBranches = getUserViewBranchIds(user)
+  const hasBranchSwitcher = isPortalAdminUser || userViewBranches.length > 0
+  const [globalBranchId, setGlobalBranchId] = useState<string | null>(() => localStorage.getItem('ashcol-global-branch-id'))
+  const [adminBranches, setAdminBranches] = useState<BranchOption[]>([])
+
+  // Live cash-on-hand reminder for the active branch — shown in the header so a branch is
+  // never more than a glance away from knowing it's due for a company bank deposit.
+  const [currentCoh, setCurrentCoh] = useState<{ totalCohCfd: number; depositThreshold: number; overThreshold: boolean } | null>(null)
+  // Only ever set on failure — surfaced in the header so a broken fetch is visible without devtools.
+  const [cohError, setCohError] = useState<string | null>(null)
+  const activeCohBranchId = hasBranchSwitcher ? globalBranchId : (user?.branchId || null)
+  useEffect(() => {
+    if (!activeCohBranchId) {
+      setCurrentCoh(null)
+      setCohError(null)
+      return
+    }
+    const TAGUIG_UUID = '2880c29e-581c-11f1-bf8c-74d4dd6dfc0b'
+    const upperId = activeCohBranchId.toUpperCase()
+    let baseBranchId = activeCohBranchId
+    let auditLine = ''
+    if (upperId === 'BR-TAGUIG-SALES' || upperId === TAGUIG_UUID.toUpperCase()) {
+      baseBranchId = TAGUIG_UUID
+    } else if (upperId === 'BR-TAGUIG-SERVICES' || upperId === 'BR-TAGUIG-SERVICE') {
+      baseBranchId = TAGUIG_UUID
+      auditLine = 'TAGUIG_SERVICE'
+    } else {
+      const match = activeCohBranchId.match(/^(.*)-(sales|services)$/i)
+      if (match) {
+        baseBranchId = match[1]
+        auditLine = match[2].toLowerCase() === 'services' ? 'TAGUIG_SERVICE' : ''
+      }
+    }
+    let cancelled = false
+    const loadCoh = async () => {
+      try {
+        const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+        const params = new URLSearchParams({ branchId: baseBranchId })
+        if (auditLine) params.set('auditLine', auditLine)
+        const url = `${API_BASE_URL}/v1/reports/current-coh?${params.toString()}`
+        const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+        if (!res.ok) {
+          if (!cancelled) {
+            setCurrentCoh(null)
+            setCohError(`COH ${res.status}`)
+          }
+          return
+        }
+        const data = await res.json()
+        if (cancelled) return
+        setCurrentCoh({
+          totalCohCfd: Number(data?.totalCohCfd) || 0,
+          depositThreshold: Number(data?.depositThreshold) || 5000,
+          overThreshold: !!data?.overThreshold
+        })
+        setCohError(null)
+      } catch {
+        if (!cancelled) {
+          setCurrentCoh(null)
+          setCohError('COH offline')
+        }
+      }
+    }
+    loadCoh()
+    const interval = setInterval(loadCoh, 120000)
+    return () => { cancelled = true; clearInterval(interval) }
+  }, [activeCohBranchId])
+
+  // Sync navVisible when sidebarCollapsed changes via the pin-toggle (logo click)
+  useEffect(() => {
+    if (!isHoverExpanded) {
+      if (sidebarCollapsed) {
+        if (navVisibleTimeout.current) clearTimeout(navVisibleTimeout.current)
+        setNavVisible(false)
+        // Show icon rail after sidebar has finished collapsing
+        navVisibleTimeout.current = setTimeout(() => setShowCollapsedIcons(true), 180)
+      } else {
+        setShowCollapsedIcons(false)
+        if (navVisibleTimeout.current) clearTimeout(navVisibleTimeout.current)
+        // Show text immediately when pin-expanding
+        setNavVisible(true)
+      }
+    }
+  }, [sidebarCollapsed, isHoverExpanded])
+
+  // Keep portal chrome in the viewport without locking html/body (that broke other pages)
+  useEffect(() => {
+    const html = document.documentElement
+    // Clear login/portal leftovers if navigating in after a hard refresh mid-login
+    html.classList.remove('login-shell')
+    html.style.removeProperty('overflow')
+    document.body.style.removeProperty('overflow')
+    document.body.style.removeProperty('touch-action')
+    html.style.removeProperty('--app-height')
+  }, [])
+
+  useEffect(() => {
+    if (!hasBranchSwitcher) return
+    const loadBranches = async () => {
+      try {
+        const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+        const res = await fetch(`${API_BASE_URL}/branches`, { headers: { Authorization: `Bearer ${token}` } })
+        if (!res.ok) return
+        const data = await res.json()
+        const list = data?.data || []
+
+        const allList: BranchOption[] = []
+        for (const b of list) {
+          const cleanName = b.name.replace(/^(ashcol\s+)/i, '').toUpperCase()
+          const isTaguigRow = (b.id || '').toLowerCase().includes('taguig')
+            || (b.id || '').toLowerCase().startsWith('2880c29e-581c-11f1-bf8c-74d4dd6dfc0b')
+            || cleanName.includes('TAGUIG')
+          // Taguig (Sales/Services) is always available; other inactive branches are hidden.
+          if (b.isActive === false && !isTaguigRow) continue
+          // Franchise branches (Valenzuela, Batangas, Gen. Trias) don't show in this
+          // portal-wide switcher — they're only selectable from the ticket edit form.
+          if (Boolean((b as any).isFranchise) || isFranchiseBranch(b.id) || isFranchiseBranch(b.name)) continue
+          if (b.id === 'BR-TAGUIG-SALES' || b.id === '2880c29e-581c-11f1-bf8c-74d4dd6dfc0b') {
+            if (!allList.some(item => item.id === 'BR-TAGUIG-SALES')) {
+              allList.push({ id: 'BR-TAGUIG-SALES', name: 'TAGUIG - SALES' })
+            }
+            if (!allList.some(item => item.id === 'BR-TAGUIG-SERVICES')) {
+              allList.push({ id: 'BR-TAGUIG-SERVICES', name: 'TAGUIG - SERVICES' })
+            }
+          } else if (b.id === 'BR-TAGUIG-SERVICES' || b.id === '2880c29e-581c-11f1-bf8c-74d4dd6dfc0b-services' || b.id === 'BR-TAGUIG-SALES-services') {
+            if (!allList.some(item => item.id === 'BR-TAGUIG-SERVICES')) {
+              allList.push({ id: 'BR-TAGUIG-SERVICES', name: 'TAGUIG - SERVICES' })
+            }
+          } else if (cleanName.includes('TAGUIG')) {
+            // skip other taguig variants
+          } else {
+            allList.push({ id: b.id, name: cleanName })
+          }
+        }
+        allList.sort((a, b) => a.name.localeCompare(b.name))
+
+        let availableBranches = allList
+        if (!isPortalAdminUser) {
+          const primaryBranch = user?.branchId || ''
+          availableBranches = allList.filter(b =>
+            branchScopesMatch(primaryBranch, b.id) || userViewBranches.some(vb => branchScopesMatch(vb, b.id))
+          ).map(b => {
+            const isReadOnly = isBranchReadOnlyForUser(b.id, user)
+            return {
+              ...b,
+              isReadOnly,
+            }
+          })
+        }
+
+        setAdminBranches(availableBranches)
+        
+        const stored = localStorage.getItem('ashcol-global-branch-id')
+        const storedEntry = stored ? findBranchListEntry(stored, availableBranches) : undefined
+        if (!storedEntry && availableBranches.length > 0) {
+          const defaultBranch = availableBranches.find(b => branchScopesMatch(user?.branchId, b.id)) || availableBranches[0]
+          localStorage.setItem('ashcol-global-branch-id', defaultBranch.id)
+          setGlobalBranchId(defaultBranch.id)
+          window.dispatchEvent(new Event('ashcol-global-branch-change'))
+        } else if (storedEntry && stored !== storedEntry.id) {
+          localStorage.setItem('ashcol-global-branch-id', storedEntry.id)
+          setGlobalBranchId(storedEntry.id)
+          window.dispatchEvent(new Event('ashcol-global-branch-change'))
+        }
+      } catch (err) {
+        console.error('Error loading branches:', err)
+      }
+    }
+    loadBranches()
+  }, [hasBranchSwitcher, isPortalAdminUser, user?.branchId, user?.viewBranchIds])
+
+  useEffect(() => {
+    if (!hasBranchSwitcher) return
+    const syncLabel = () => {
+      const gId = localStorage.getItem('ashcol-global-branch-id')
+      setGlobalBranchId(gId)
+      if (gId && adminBranches.length > 0) {
+        const found = findBranchListEntry(gId, adminBranches) || adminBranches.find(b => b.id === gId)
+        if (found) {
+          const isReadOnly = isBranchReadOnlyForUser(found.id, user)
+          const displayName = normalizeBranchDisplayName(found.id, found.name) || found.name
+          setBranchLabel(isReadOnly ? `${displayName} (VIEW ONLY)` : displayName)
+        }
+      } else {
+        setBranchLabel(null)
+      }
+    }
+    syncLabel()
+    window.addEventListener('ashcol-global-branch-change', syncLabel)
+    return () => window.removeEventListener('ashcol-global-branch-change', syncLabel)
+  }, [hasBranchSwitcher, adminBranches, user])
+
+  const handleGlobalBranchChange = (val: string) => {
+    localStorage.setItem('ashcol-global-branch-id', val)
+    setGlobalBranchId(val)
+    window.dispatchEvent(new Event('ashcol-global-branch-change'))
+  }
+
+  useEffect(() => {
+    if (hasBranchSwitcher || !user?.branchId) {
+      if (!hasBranchSwitcher) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setBranchLabel(null)
+      }
+      return
+    }
+    const load = async () => {
+      try {
+        const token = localStorage.getItem('ashcol-token') || sessionStorage.getItem('ashcol-token') || ''
+        const res = await fetch(`${API_BASE_URL}/branches`, { headers: { Authorization: `Bearer ${token}` } })
+        if (!res.ok) return
+        const data = await res.json()
+        const list = data?.data || []
+        const branchId = user.branchId || ''
+        const baseBranchId = branchId.replace(/-sales$|-services$/i, '')
+        const b = list.find((x: { id: string }) => x.id === branchId)
+          || list.find((x: { id: string }) => x.id === baseBranchId)
+          || list.find((x: { name?: string }) => {
+            const name = (x.name || '').toUpperCase()
+            return branchId.toUpperCase().startsWith('BR-TAGUIG') && name.includes('TAGUIG')
+          })
+        setBranchLabel(normalizeBranchDisplayName(branchId, b?.name))
+      } catch {
+        setBranchLabel(normalizeBranchDisplayName(user?.branchId, null))
+      }
+    }
+    load()
+  }, [user?.branchId, isPortalAdminUser])
+
+  // Close dropdowns on outside click. Capture phase so a target element's own
+  // stopPropagation() (e.g. a table row/cell click handler) can't block this from firing —
+  // that was letting clicks anywhere on page content pass through without closing the header
+  // branch dropdown.
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (profileRef.current && !profileRef.current.contains(e.target as Node)) setProfileOpen(false)
+      if (headerBranchRef.current && !headerBranchRef.current.contains(e.target as Node)) setHeaderBranchDropdownOpen(false)
+    }
+    document.addEventListener('mousedown', handler, true)
+    const onHeaderMenuOpened = (e: Event) => {
+      if ((e as CustomEvent).detail !== 'profile') setProfileOpen(false)
+    }
+    window.addEventListener(HEADER_MENU_OPENED_EVENT, onHeaderMenuOpened)
+    return () => {
+      document.removeEventListener('mousedown', handler, true)
+      window.removeEventListener(HEADER_MENU_OPENED_EVENT, onHeaderMenuOpened)
+    }
+  }, [])
+
+  const canAccessRelays = canMemberAccessRelaysAndTicketCreation(user)
+  const canAccessDdrm = canMemberAccessDdrm(user)
+
+  const allLinks = [
+    { name: 'Schedules',       path: '/schedules',        icon: CalendarDays },
+    { name: 'My Tickets',      path: '/my-tickets',       icon: ClipboardList,   roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
+    { name: 'Relays',          path: '/relays',           icon: Radio,           roles: canAccessRelays ? ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] : ['admin', 'management'] },
+    { name: 'Bookings',        path: '/bookings',         icon: CalendarPlus,    roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
+    { name: 'Search',          path: '/search',          icon: Search },
+    { name: 'Archives',        path: '/service-report',  icon: Archive,         roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
+    { name: 'Registration',   path: '/registration',    icon: ClipboardCheck, roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
+    { name: 'Happy Calls',    path: '/happy-calls',     icon: PhoneCall,      roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
+    // { name: 'Office tasks',    path: '/office-tasks',     icon: Building2,       roles: ['admin', 'management'] },
+    { name: 'LINEUP',          path: '/lineup',           icon: ListOrdered,     roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
+    { name: 'Members',         path: '/members',          icon: UserCog,         roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic', 'technician', 'driver'] },
+    { name: 'Vehicles',        path: '/vehicles',         icon: Truck,           roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic', 'technician', 'driver'] },
+    { name: 'Expense Records', path: '/expenses',         icon: ClipboardList,  roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
+    { name: 'For Collections',  path: '/collections',     icon: CircleDollarSign, roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
+    { name: 'Commissions',      path: '/commissions',     icon: Percent,          roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
+    { name: 'Cash Advance',     path: '/cash-advances',   icon: Wallet,           roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
+    { name: 'Payouts',          path: '/payouts',          icon: Banknote,        roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] }, // payroll users manage; everyone else on staff gets a read-only view of their own branch
+    { name: 'Daily Transaction', path: '/audit-report',   icon: TrendingUp,      roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
+    { name: 'Directory',       path: '/branches',         icon: MapPin,          roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic', 'technician', 'driver'] },
+    // { name: 'HRIS',              path: '/admin-hris',       icon: Calendar,        roles: ['admin', 'management', 'manager'] },
+    { name: 'DDRM',              path: '/ddrm',             icon: Route,           roles: canAccessDdrm ? ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] : ['admin', 'management', 'manager'] },
+    { name: 'Request Forms',     path: '/operations-forms', icon: ClipboardList, roles: ['admin', 'management', 'manager', 'staff', 'employee', 'oic'] },
+    // { name: 'Bills',             path: '/admin-bills',      icon: Landmark,        roles: ['admin', 'management', 'manager'] },
+    // { name: 'Telecoms',          path: '/admin-telecom',    icon: Wifi,            roles: ['admin', 'management', 'manager'] },
+  ]
+
+  const role = (user?.role || '').toLowerCase()
+  const isAuthorizedRole = role === 'admin' || role === 'management' || role === 'manager' || role === 'staff' || role === 'employee' || role === 'oic' || role === 'technician' || role === 'driver'
+
+  const salesWorkspaceLinks = ['My Tickets', 'Search', 'Schedules', 'Archives', 'Registration', 'Happy Calls', 'For Collections', 'Commissions', 'Cash Advance', 'Daily Transaction', 'Expense Records', 'LINEUP', 'Request Forms', 'Members', 'Vehicles', 'Directory', 'Payouts', 'Bookings', ...(canAccessRelays ? ['Relays'] : []), ...(canAccessDdrm ? ['DDRM'] : [])]
+  const serviceWorkspaceLinks = ['My Tickets', 'Search', 'Schedules', 'Archives', 'Registration', 'Happy Calls', 'For Collections', 'Commissions', 'Cash Advance', 'Daily Transaction', 'Expense Records', 'LINEUP', 'Request Forms', 'Members', 'Vehicles', 'Directory', 'Payouts', 'Bookings', ...(canAccessRelays ? ['Relays'] : []), ...(canAccessDdrm ? ['DDRM'] : [])]
+  const isSalesUser = isSalesWorkspaceUser(user)
+  const isServiceUser = isServiceWorkspaceUser(user)
+
+  // A MANAGEMENT member assigned to one branch and tagged COORDINATOR (isSalesUser/isServiceUser
+  // true despite isPortalAdmin) gets that branch's scoped workspace nav, not the full admin one —
+  // see isManagementCoordinatorScopedToBranch in utils/api.ts.
+  const navLinks = isPortalAdmin(role) && !isSalesUser && !isServiceUser
+      ? allLinks.filter(link => {
+          if (!link.roles) return true
+          return link.roles.includes(role)
+        })
+      : isSalesUser
+        ? allLinks.filter(link => salesWorkspaceLinks.includes(link.name))
+        : isServiceUser
+          ? allLinks.filter(link => serviceWorkspaceLinks.includes(link.name))
+      : isAuthorizedRole
+        ? allLinks.filter(link => serviceWorkspaceLinks.includes(link.name))
+        : allLinks.filter(link => serviceWorkspaceLinks.includes(link.name))
+
+  // Redirect if current path is not allowed for the user
+  useEffect(() => {
+    if (!user) return
+    const currentPath = location.pathname
+    const alwaysAllowed = ['/profile', '/tickets/create', '/create-ticket', '/request-forms-archive']
+    if (alwaysAllowed.includes(currentPath) || currentPath.startsWith('/messages') || currentPath.startsWith('/audit-expenses')) return
+
+
+    const isAllowed = navLinks.some(link => currentPath === link.path || currentPath.startsWith(link.path + '/'))
+    if (!isAllowed && navLinks.length > 0) {
+      const homePath = getPortalHomePath(user)
+      const hasHome = navLinks.some(l => l.path === homePath)
+      const fallback = hasHome ? homePath : navLinks[0].path
+      navigate(fallback, { replace: true })
+    }
+  }, [location.pathname, navLinks, role, user, navigate])
+
+  // ── Color tokens (direct JS objects — no CSS vars) ──────────────
+  const bg          = isLight ? '#f1f5f9'              : '#060B18'
+  const sidebarBg   = isLight ? '#ffffff'              : '#0A1120'
+  const headerBg    = isLight ? 'rgba(255,255,255,0.9)': 'rgba(6,11,24,0.9)'
+  const border      = isLight ? '#e2e8f0'              : '#1a2844'
+  const textPrimary = isLight ? '#0f172a'              : '#E2E8F0'
+  const textMuted   = isLight ? '#64748b'              : '#6B90BE'
+  const hoverBg     = isLight ? '#f1f5f9'              : '#0f1e36'
+  const inputBorder = isLight ? '#cbd5e1'              : '#1e3254'
+
+  const currentPage = navLinks.find(l => location.pathname === l.path || (l.path !== '/' && location.pathname.startsWith(l.path + '/')))?.name
+    ?? (location.pathname.startsWith('/members') ? 'Members'
+      : location.pathname === '/my-tickets' ? 'My Tickets'
+      : location.pathname.startsWith('/messages') ? 'Messages'
+      : 'Dashboard')
+  const navGroups = buildNavGroups(navLinks)
+  const collapsedNavItems = buildCollapsedNavItems(navLinks)
+
+  // Keep the group for the current page open; don't fight manual collapse until route changes.
+  useEffect(() => {
+    const path = location.pathname
+    if (path === lastPathname.current) return
+    lastPathname.current = path
+
+    for (const group of navGroups) {
+      const active = group.subItems.find(sub =>
+        path === sub.path || (sub.path.length > 1 && path.startsWith(sub.path + '/'))
+      )
+      if (active) {
+        setOpenAccordion(group.title)
+        setActiveSubItem(active.name)
+        return
+      }
+    }
+    
+    // If the new path doesn't match any accordion subItem, clear the active subItem
+    setActiveSubItem(null)
+    setOpenAccordion(null)
+  }, [location.pathname, navGroups])
+
+  // Auto collapse on route change and scroll to top
+  const mainContentRef = useRef<HTMLElement>(null)
+  const prevRouteRef = useRef<string | null>(null)
+  useEffect(() => {
+    const routeKey = location.pathname + location.search
+    if (mainContentRef.current) {
+      mainContentRef.current.scrollTo({ top: 0, left: 0, behavior: 'instant' as ScrollBehavior })
+    }
+    if (window.innerWidth < 768) {
+      setSidebarOpen(false)
+    } else if (prevRouteRef.current !== null && prevRouteRef.current !== routeKey) {
+      // Minimize the rail after every navigation (pinned or hover-expanded); hovering re-opens it.
+      collapseSidebar()
+    }
+    prevRouteRef.current = routeKey
+  }, [location.pathname, location.search])
+
+  // Prevent minimized state on mobile
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth < 768 && sidebarCollapsed) {
+        setSidebarCollapsed(false)
+      }
+    }
+    handleResize()
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [sidebarCollapsed])
+
+  const toggleAccordion = (title: string) => {
+    setOpenAccordion(prev => (prev === title ? null : title))
+  }
+
+  // Phone status bar / overscroll area must be the exact shade of the page, so the header and
+  // status bar read as one seamless surface (like Facebook) instead of separately-tinted bands.
+  useEffect(() => {
+    const meta = document.querySelector('meta[name="theme-color"]')
+    const prevMeta = meta?.getAttribute('content') ?? null
+    const prevHtmlBg = document.documentElement.style.backgroundColor
+    const prevBodyBg = document.body.style.backgroundColor
+    meta?.setAttribute('content', bg)
+    document.documentElement.style.backgroundColor = bg
+    document.body.style.backgroundColor = bg
+    return () => {
+      if (meta && prevMeta !== null) meta.setAttribute('content', prevMeta)
+      document.documentElement.style.backgroundColor = prevHtmlBg
+      document.body.style.backgroundColor = prevBodyBg
+    }
+  }, [bg])
+
+  const sidebarIconColor = 'rgba(255,255,255,0.88)'
+  const sidebarHoverBg = 'rgba(255,255,255,0.1)'
+  const sidebarActiveBg = 'rgba(16,185,129,0.18)'
+
+  if (!user) {
+    return <Navigate to="/login" replace />
+  }
+
+  return (
+    <div
+      className={`flex w-full max-w-full h-dvh max-h-dvh overflow-hidden font-['Inter',sans-serif] ${sidebarCollapsed ? 'sidebar-collapsed' : 'sidebar-expanded'}`}
+      style={{ backgroundColor: bg, color: textPrimary }}
+    >
+      {/* ── Mobile Menu ─────────────────────────────────
+          Phones get a full-screen launcher instead of the slide-in sidebar: every page is one
+          tap away as an icon tile (no accordions), and the brand band paints under the status
+          bar so nothing looks cropped at the top. The sidebar itself is desktop/tablet only. */}
+      {sidebarOpen && (() => {
+        const groupedPaths = new Set(navGroups.flatMap(g => g.subItems.map(s => s.path)))
+        const topLinks = navLinks.filter(l => !groupedPaths.has(l.path))
+        const isActivePath = (path: string) =>
+          location.pathname === path || (path.length > 1 && location.pathname.startsWith(path + '/'))
+        const tileBg = isLight ? '#ffffff' : '#0A1120'
+        const tile = (key: string, to: string, label: string, icon: React.ReactNode) => {
+          const active = isActivePath(to)
+          return (
+            <Link
+              key={key}
+              to={to}
+              onClick={() => setSidebarOpen(false)}
+              className="flex flex-col items-center justify-start gap-1.5 px-1 py-2.5 min-h-[82px] rounded-2xl border text-center active:scale-95 transition-transform"
+              style={{
+                backgroundColor: active ? 'rgba(16,185,129,0.12)' : tileBg,
+                borderColor: active ? '#10B981' : border,
+              }}
+            >
+              <span
+                className="w-9 h-9 rounded-full flex items-center justify-center shrink-0"
+                style={{ backgroundColor: active ? '#10B981' : 'rgba(16,185,129,0.12)', color: active ? '#ffffff' : '#10B981' }}
+              >
+                {icon}
+              </span>
+              <span className="text-[10.5px] font-bold leading-tight line-clamp-2" style={{ color: active ? '#10B981' : textPrimary }}>
+                {label}
+              </span>
+            </Link>
+          )
+        }
+        return (
+          <div
+            className="md:hidden fixed inset-0 z-50 flex flex-col animate-in fade-in duration-150"
+            style={{ backgroundColor: bg }}
+            role="dialog"
+            aria-label="Navigation menu"
+          >
+            {/* Brand band — same surface as the page and status bar; green only as an accent */}
+            <div
+              className="shrink-0"
+              style={{ paddingTop: 'env(safe-area-inset-top, 0px)', backgroundColor: bg, borderBottom: `1px solid ${border}`, color: textPrimary }}
+            >
+              <div className="h-14 flex items-center justify-between px-4">
+                <div className="flex items-center gap-3 min-w-0">
+                  <img src={logoImg} alt="ASHCOL" className="w-9 h-9 object-contain rounded-lg shrink-0" />
+                  <div className="min-w-0">
+                    <div className="text-[15px] font-black tracking-wide font-['Poppins',sans-serif] leading-tight">ASHCOL</div>
+                    <div className="text-[9px] font-bold tracking-[3px] text-emerald-500 uppercase">Portal</div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSidebarOpen(false)}
+                  aria-label="Close menu"
+                  className="w-9 h-9 rounded-full flex items-center justify-center active:scale-95 transition-transform"
+                  style={{ backgroundColor: 'rgba(16,185,129,0.12)', color: '#10B981' }}
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            <div
+              className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-3.5 pt-3.5 flex flex-col gap-4"
+              style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom, 0px))' }}
+            >
+              {topLinks.length > 0 && (
+                <div className="flex flex-col gap-2">
+                  {topLinks.map(l => {
+                    const Icon = l.icon
+                    const active = isActivePath(l.path)
+                    return (
+                      <Link
+                        key={l.name}
+                        to={l.path}
+                        onClick={() => setSidebarOpen(false)}
+                        className="flex items-center gap-3 h-11 px-3.5 rounded-2xl border active:scale-[0.98] transition-transform"
+                        style={{ backgroundColor: active ? 'rgba(16,185,129,0.12)' : tileBg, borderColor: active ? '#10B981' : border, color: active ? '#10B981' : textPrimary }}
+                      >
+                        <Icon className="w-[18px] h-[18px] shrink-0 text-emerald-500" strokeWidth={2} />
+                        <span className="flex-1 text-[13px] font-bold">{l.name}</span>
+                        <ChevronRight className="w-4 h-4 shrink-0" style={{ color: textMuted }} />
+                      </Link>
+                    )
+                  })}
+                </div>
+              )}
+
+              {navGroups.map(group => (
+                <section key={group.title} className="flex flex-col gap-2">
+                  <div className="flex items-center gap-2 px-0.5">
+                    <span className="text-[10px] font-black uppercase tracking-[2px]" style={{ color: textMuted }}>{group.title}</span>
+                    <span className="flex-1 h-px" style={{ backgroundColor: border }} />
+                  </div>
+                  <div className="grid grid-cols-4 gap-2">
+                    {group.subItems.map(sub =>
+                      tile(
+                        `${group.title}-${sub.name}`,
+                        sub.path,
+                        sub.name,
+                        isValidElement(sub.icon) ? cloneElement(sub.icon, { size: 18 }) : sub.icon,
+                      ),
+                    )}
+                  </div>
+                </section>
+              ))}
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* ── Sidebar (tablet/desktop only — phones use the menu above) ── */}
+      <div
+        className="relative hidden md:flex shrink-0 h-full max-h-full min-h-0"
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
+      >
+        <aside
+        className={`
+          fixed md:static inset-y-0 left-0 z-50 flex flex-col h-full max-h-full min-h-0 overflow-hidden
+          bg-gradient-to-b from-[#0a180f] via-[#205e30] to-[#3ca94d]
+          text-white
+          ${sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
+          ${sidebarCollapsed ? 'md:w-[64px]' : 'w-[260px] md:w-[220px] lg:w-[240px]'}
+        `}
+        style={{
+          transition: 'width 120ms cubic-bezier(0.4,0,0.2,1), transform 200ms cubic-bezier(0.4,0,0.2,1)',
+          paddingTop: 'env(safe-area-inset-top, 0px)',
+          paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+        }}
+      >
+        {/* Brand */}
+        <div
+          className={`flex items-center h-14 shrink-0 ${sidebarCollapsed ? 'justify-center px-2' : 'px-4'}`}
+        >
+          {/* Logo - always visible, click to toggle collapse on desktop */}
+          <img
+            src={logoImg}
+            alt="ASHCOL"
+            onClick={() => {
+              if (sidebarCollapsed || isHoverExpanded) {
+                if (hoverDebounce.current) clearTimeout(hoverDebounce.current)
+                if (hoverTimeout.current) clearTimeout(hoverTimeout.current)
+                if (navVisibleTimeout.current) clearTimeout(navVisibleTimeout.current)
+                setShowCollapsedIcons(false)
+                setSidebarCollapsed(false)
+                setIsHoverExpanded(false)
+                setNavVisible(true)
+              } else {
+                collapseSidebar()
+              }
+            }}
+            className={`w-9 h-9 object-contain rounded-lg shrink-0 transition-all duration-300 cursor-pointer hidden md:block ${sidebarCollapsed ? 'mx-auto' : ''}`}
+          />
+          <img
+            src={logoImg}
+            alt="ASHCOL"
+            className="w-9 h-9 object-contain rounded-lg shrink-0 md:hidden"
+          />
+
+          {/* Brand text - fades out when collapsed */}
+          <div
+            className="flex-1 min-w-0 ml-3 transition-all duration-200"
+            style={{ opacity: sidebarCollapsed ? 0 : 1, width: sidebarCollapsed ? 0 : undefined, overflow: 'hidden', whiteSpace: 'nowrap' }}
+          >
+            <div className="text-[15px] font-black tracking-wide text-white font-['Poppins',sans-serif]">ASHCOL</div>
+            <div className="text-[9px] font-bold tracking-[3px] text-green-400 uppercase">Portal</div>
+          </div>
+
+          {/* Mobile close */}
+          <button
+            className="md:hidden p-1.5 rounded-lg transition-colors hover:bg-white/10 shrink-0 text-white/80 hover:text-white"
+            onClick={() => setSidebarOpen(false)}
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* ── Nav Links ──────────────────────────────────── */}
+        <nav className="flex-1 min-h-0 overflow-y-auto py-3 px-2 flex flex-col gap-0.5 relative">
+
+          {/* ══ EXPANDED CONTENT — shown when navVisible, fades smoothly ══ */}
+          <div
+            style={{
+              opacity: navVisible ? 1 : 0,
+              transition: 'opacity 120ms ease',
+              pointerEvents: navVisible ? 'auto' : 'none',
+              display: !navVisible && sidebarCollapsed ? 'none' : undefined,
+            }}
+          >
+            {navVisible && (<>
+              <div className="text-[10px] font-bold uppercase tracking-[2px] px-3 mb-2 text-white/40 w-full">
+                Navigation
+              </div>
+
+              {/* Search */}
+              {navLinks.some(l => l.name === 'Search') && (() => {
+                const link = navLinks.find(l => l.name === 'Search')!
+                const isActive = location.pathname === link.path
+                const Icon = link.icon
+                return (
+                  <Link
+                    key={link.name}
+                    to={link.path}
+                    onMouseEnter={() => preloadPath(link.path)}
+                    onClick={() => {
+                      setSidebarOpen(false)
+                      collapseSidebar()
+                    }}
+                    className="group flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13.5px] font-semibold transition-all duration-150 relative"
+                    style={isActive
+                      ? { color: '#10B981', backgroundColor: 'rgba(16,185,129,0.15)' }
+                      : { color: '#ffffff' }}
+                    onMouseEnter={e => {
+                      if (!isActive) (e.currentTarget as HTMLElement).style.backgroundColor = 'rgba(255,255,255,0.1)'
+                    }}
+                    onMouseLeave={e => {
+                      if (!isActive) (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'
+                    }}
+                  >
+                    {isActive && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-5 bg-[#10B981] rounded-r-full" />}
+                    {Icon && <Icon className="w-4 h-4 shrink-0" />}
+                    <span className="flex-1 truncate">{link.name}</span>
+                    {isActive && <ChevronRight className="w-3.5 h-3.5 opacity-60 shrink-0" />}
+                  </Link>
+                )
+              })()}
+
+              {/* Accordion Groups */}
+              {navGroups.map(group => {
+                const isOpen = openAccordion === group.title
+                const GroupIcon = group.Icon
+                const isRouteInGroup = group.subItems.some(sub =>
+                  location.pathname === sub.path
+                  || (sub.path.length > 1 && location.pathname.startsWith(sub.path + '/'))
+                )
+                const panelId = `nav-panel-${group.title.replace(/\s+/g, '-').toLowerCase()}`
+                return (
+                  <div key={group.title} className="mb-0.5 w-full">
+                    <button
+                      type="button"
+                      tabIndex={-1}
+                      aria-expanded={isOpen}
+                      aria-controls={panelId}
+                      onClick={() => toggleAccordion(group.title)}
+                      onKeyDown={(e) => {
+                        if (e.key === ' ') { e.preventDefault(); return }
+                        if (e.key === 'Enter') { e.preventDefault(); toggleAccordion(group.title) }
+                      }}
+                      className="w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl text-[13.5px] font-semibold transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/30"
+                      style={isOpen
+                        ? { color: '#ffffff', backgroundColor: 'rgba(255,255,255,0.12)' }
+                        : isRouteInGroup
+                          ? { color: '#ffffff', backgroundColor: 'rgba(255,255,255,0.06)' }
+                          : { color: sidebarIconColor }}
+                      onMouseEnter={e => {
+                        if (!isOpen) (e.currentTarget as HTMLElement).style.backgroundColor = sidebarHoverBg
+                      }}
+                      onMouseLeave={e => {
+                        (e.currentTarget as HTMLElement).style.backgroundColor = isOpen
+                          ? 'rgba(255,255,255,0.12)'
+                          : isRouteInGroup ? 'rgba(255,255,255,0.06)' : 'transparent'
+                      }}
+                    >
+                      <div className="flex items-center gap-3">
+                        <GroupIcon size={17} className="shrink-0 text-white" />
+                        <span className="flex-1 truncate text-left">{group.title}</span>
+                      </div>
+                      {isOpen
+                        ? <FiMinus size={13} className="shrink-0 opacity-60 text-white" />
+                        : <FiPlus size={13} className="shrink-0 opacity-60 text-white" />}
+                    </button>
+
+                    <div
+                      id={panelId}
+                      role="region"
+                      aria-label={group.title}
+                      className="relative ml-5 pl-5 overflow-hidden"
+                      style={{
+                        maxHeight: isOpen ? '400px' : '0px',
+                        opacity: isOpen ? 1 : 0,
+                        marginTop: isOpen ? '4px' : '0px',
+                        marginBottom: isOpen ? '8px' : '0px',
+                        transition: 'max-height 300ms cubic-bezier(0.4,0,0.2,1), opacity 200ms ease, margin 300ms cubic-bezier(0.4,0,0.2,1)',
+                      }}
+                    >
+                      <div className="absolute left-[3px] top-0 bottom-0 w-[1px] bg-white/20" />
+                      <div className="flex flex-col space-y-3 py-1">
+                        {group.subItems.map((sub, idx) => {
+                          const isSubActive = activeSubItem === sub.name
+                            || location.pathname === sub.path
+                            || location.pathname.startsWith(sub.path + '/')
+                          return (
+                            <Link
+                              key={`${group.title}-${idx}`}
+                              to={sub.path}
+                              onMouseEnter={() => preloadPath(sub.path)}
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setActiveSubItem(sub.name)
+                                setSidebarOpen(false)
+                                collapseSidebar()
+                              }}
+                              className={`relative flex items-center gap-2 text-[13.5px] font-semibold transition-colors py-1 ${
+                                isSubActive ? 'text-white' : 'text-white/50 hover:text-white'
+                              }`}
+                            >
+                              {isSubActive && (
+                                <div className="absolute -left-4 top-0 bottom-0 w-[3px] bg-white rounded-full" />
+                              )}
+                              <span className={`shrink-0 transition-opacity ${isSubActive ? 'opacity-100' : 'opacity-70'}`}>
+                                {sub.icon}
+                              </span>
+                              <span className="truncate">{sub.name}</span>
+                            </Link>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </>)}
+          </div>
+
+          {/* ══ COLLAPSED ICON RAIL — rendered only when navVisible is false ══ */}
+          {!navVisible && (
+            <div
+              className="w-full py-1.5 flex flex-col gap-2 items-center"
+              style={{
+                opacity: showCollapsedIcons ? 1 : 0,
+                transition: 'opacity 120ms ease',
+                pointerEvents: showCollapsedIcons ? 'auto' : 'none',
+              }}
+            >
+              {collapsedNavItems.map((item) => {
+                const isActive = item.groupPaths
+                  ? item.groupPaths.some(p => location.pathname === p || location.pathname.startsWith(p + '/'))
+                  : (location.pathname === item.path || location.pathname.startsWith(item.path + '/'))
+                return (
+                  <div
+                    key={item.key}
+                    role="button"
+                    tabIndex={0}
+                    onMouseEnter={() => {
+                      preloadPath(item.path)
+                      handleMouseEnter()
+                    }}
+                    onClick={() => {
+                      if (item.groupPaths) {
+                        if (hoverDebounce.current) clearTimeout(hoverDebounce.current)
+                        if (hoverTimeout.current) clearTimeout(hoverTimeout.current)
+                        if (navVisibleTimeout.current) clearTimeout(navVisibleTimeout.current)
+                        setShowCollapsedIcons(false)
+                        setSidebarCollapsed(false)
+                        setIsHoverExpanded(true)
+                        setNavVisible(true)
+                        setOpenAccordion(item.name)
+                      } else {
+                        navigate(item.path)
+                      }
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault()
+                        if (item.groupPaths) {
+                          setShowCollapsedIcons(false)
+                          setSidebarCollapsed(false)
+                          setIsHoverExpanded(true)
+                          setNavVisible(true)
+                          setOpenAccordion(item.name)
+                        } else {
+                          navigate(item.path)
+                        }
+                      }
+                    }}
+                    title={item.name}
+                    className="flex items-center justify-center w-11 h-11 rounded-xl transition-all duration-150 relative cursor-pointer"
+                    style={isActive
+                      ? { color: '#10B981', backgroundColor: sidebarActiveBg }
+                      : { color: sidebarIconColor }}
+                    onMouseEnter={e => {
+                      if (!isActive) {
+                        (e.currentTarget as HTMLElement).style.backgroundColor = sidebarHoverBg
+                        ;(e.currentTarget as HTMLElement).style.color = '#ffffff'
+                      }
+                    }}
+                    onMouseLeave={e => {
+                      if (!isActive) {
+                        (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'
+                        ;(e.currentTarget as HTMLElement).style.color = sidebarIconColor
+                      }
+                    }}
+                  >
+                    {isActive && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-5 bg-[#10B981] rounded-r-full" />}
+                    {isValidElement(item.icon)
+                      ? cloneElement(item.icon, { color: isActive ? '#10B981' : '#ffffff', className: 'shrink-0' })
+                      : item.icon}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
+        </nav>
+
+
+
+      </aside>
+    </div>
+
+      {/* ── Main Content Area ───────────────────────────── */}
+      <div className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden">
+
+        {/* ── Global Header (Mobile/Tablet/Desktop) ──────────────── */}
+        <header 
+          className={`flex-none z-30 md:backdrop-blur-md w-full min-w-0 max-w-full relative ${isLight ? 'bg-[#f1f5f9] md:bg-white/80' : 'bg-[#060B18] md:bg-[#0A1120]/80'} ${location.pathname.startsWith('/messages') ? 'hidden md:block' : ''}`}
+          style={{
+            paddingTop: 'env(safe-area-inset-top, 0px)',
+            paddingLeft: 'env(safe-area-inset-left, 0px)',
+            paddingRight: 'env(safe-area-inset-right, 0px)',
+          }}
+        >
+          {/* Top row: title + icons */}
+          <div className="h-14 flex items-center justify-between px-4 md:px-6 lg:px-8 relative min-w-0">
+            <div className="flex items-center gap-2 md:gap-3 flex-1 min-w-0 mr-2">
+              <button
+                className="md:hidden p-2 rounded-xl transition-all shrink-0"
+                style={{ color: textMuted, backgroundColor: isLight ? '#e6ebf2' : hoverBg }}
+                onClick={() => setSidebarOpen(true)}
+              >
+                <Menu className="w-4 h-4" />
+              </button>
+
+              <div className="flex flex-col justify-center min-w-0 shrink-0">
+                {location.pathname === '/profile' ? (
+                  <h1 className="text-[15px] md:text-[17px] font-black tracking-tight leading-snug py-0.5 uppercase truncate" style={{ color: textPrimary }}>
+                    Profile
+                  </h1>
+                ) : location.pathname.startsWith('/messages') || currentPage === 'Messages' ? (
+                  <h1 className="text-[15px] md:text-[17px] font-black tracking-tight leading-snug py-0.5 uppercase truncate" style={{ color: textPrimary }}>
+                    Messages
+                  </h1>
+                ) : currentPage === 'Search' || location.pathname === '/search' ? (
+                  <h1 className="text-[15px] md:text-[17px] font-black tracking-tight leading-snug py-0.5 uppercase truncate" style={{ color: textPrimary }}>
+                    Search
+                  </h1>
+                ) : currentPage === 'Relays' || currentPage === 'Employees' || currentPage === 'Members' || currentPage === 'Registration' || currentPage === 'Bookings' || location.pathname === '/bookings' || currentPage === 'Request Forms' || currentPage === 'Request Forms Archive' || currentPage === 'Payouts' || currentPage === 'Payroll' || currentPage === 'For Collections' || currentPage === 'Cash Advance' || location.pathname.startsWith('/payouts') || location.pathname.startsWith('/payroll') || location.pathname === '/operations-forms' || location.pathname === '/request-forms-archive' || location.pathname === '/collections' || location.pathname === '/cash-advances' ? (
+                  <h1 className="text-[15px] md:text-[17px] font-black tracking-tight leading-snug py-0.5 uppercase truncate" style={{ color: textPrimary }}>
+                    {currentPage === 'Bookings' || location.pathname === '/bookings' ? 'BOOKING' : currentPage}
+                  </h1>
+                ) : (
+                  <>
+                    <span className="text-[10px] font-extrabold uppercase tracking-widest leading-normal mb-0.5" style={{ color: textMuted }}>
+                      {currentPage}
+                    </span>
+                    {branchLabel ? (
+                      hasBranchSwitcher && adminBranches.length > 0 ? (
+                        <div ref={headerBranchRef} className="relative">
+                          <button
+                            onClick={() => setHeaderBranchDropdownOpen(prev => !prev)}
+                            className="flex items-center gap-1 text-[15px] md:text-[17px] font-black tracking-tight leading-snug py-0.5 uppercase truncate transition-opacity hover:opacity-80"
+                            style={{ color: textPrimary }}
+                            title={`Active Branch: ${branchLabel}`}
+                          >
+                            <span className="truncate py-0.5">{branchLabel}</span>
+                            <ChevronDown className="w-3.5 h-3.5 shrink-0" style={{ color: textMuted }} />
+                          </button>
+                          {headerBranchDropdownOpen && (
+                              <div
+                                className="absolute z-50 w-[420px] max-w-[calc(100vw-2rem)] rounded-xl shadow-2xl overflow-hidden top-[calc(100%+8px)] left-0"
+                                style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0' }}
+                              >
+                                <div className="px-4 py-3 text-xs font-black uppercase tracking-wider text-slate-400" style={{ borderBottom: '1px solid #f1f5f9' }}>
+                                  Active Branch
+                                </div>
+                                <div className="p-1.5 grid grid-cols-2 gap-1 max-h-80 overflow-y-auto no-scrollbar">
+                                  {adminBranches.map((b) => {
+                                    const isSelected = b.id === globalBranchId
+                                    return (
+                                      <button
+                                        key={b.id}
+                                        onClick={() => { handleGlobalBranchChange(b.id); setHeaderBranchDropdownOpen(false) }}
+                                        className={`flex items-center justify-between gap-2 px-3 py-2.5 rounded-lg text-sm font-semibold transition-colors text-left ${
+                                          isSelected ? 'bg-emerald-50 text-slate-900' : 'text-slate-600 hover:bg-emerald-50 hover:text-slate-900'
+                                        }`}
+                                      >
+                                        <div className="flex items-center gap-2 truncate mr-2">
+                                          <span className="truncate py-0.5">{formatBranchName(b.name)}</span>
+                                          {b.isReadOnly && (
+                                            <span className="text-[9px] font-bold px-1 py-0.5 rounded bg-amber-100 text-amber-800 shrink-0">
+                                              READ ONLY
+                                            </span>
+                                          )}
+                                        </div>
+                                        {isSelected && <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />}
+                                      </button>
+                                    )
+                                  })}
+                                </div>
+                              </div>
+                          )}
+                        </div>
+                      ) : (
+                        <h1 className="text-[15px] md:text-[17px] font-black tracking-tight leading-snug py-0.5 uppercase truncate" style={{ color: textPrimary }} title={branchLabel}>
+                          {branchLabel}
+                        </h1>
+                      )
+                    ) : null}
+                  </>
+                )}
+              </div>
+
+              {/* Slot for inline top-header search bar on mobile/desktop */}
+              <div id="header-top-search-slot" className="flex items-center min-w-0 flex-1 max-w-[210px] xs:max-w-[240px] sm:max-w-xs ml-1" />
+            </div>
+
+            {/* Right: Actions */}
+            <div className="flex items-center gap-1.5 shrink-0">
+              {currentCoh && currentCoh.overThreshold && (
+                <span
+                  className="inline-flex items-center px-2 sm:px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border w-fit max-w-[110px] sm:max-w-none truncate transition-colors"
+                  style={{
+                    backgroundColor: currentCoh.overThreshold ? 'rgba(239,68,68,0.08)' : 'rgba(16,185,129,0.08)',
+                    color: currentCoh.overThreshold ? '#EF4444' : '#10B981',
+                    borderColor: currentCoh.overThreshold ? 'rgba(239,68,68,0.2)' : 'rgba(16,185,129,0.18)'
+                  }}
+                  title={currentCoh.overThreshold
+                    ? `Cash on hand ₱${currentCoh.totalCohCfd.toLocaleString('en-PH')} — due for deposit (limit ₱${currentCoh.depositThreshold.toLocaleString('en-PH')})`
+                    : `Cash on hand ₱${currentCoh.totalCohCfd.toLocaleString('en-PH')}`}
+                >
+                  COH ₱{currentCoh.totalCohCfd.toLocaleString('en-PH')}
+                  {currentCoh.overThreshold && <span className="hidden lg:inline"> · Deposit Due</span>}
+                </span>
+              )}
+              {!currentCoh && cohError && (
+                <span
+                  className="inline-flex items-center px-2 py-1 rounded-full text-[9px] font-bold uppercase tracking-wider border"
+                  style={{ backgroundColor: 'rgba(245,158,11,0.08)', color: '#F59E0B', borderColor: 'rgba(245,158,11,0.2)' }}
+                  title="Cash-on-hand lookup failed — see this branch's row in the audit report for today's COH/CFD instead."
+                >
+                  {cohError}
+                </span>
+              )}
+              {isPortalAdminUser && (
+                <button
+                  onClick={() => setBroadcastOpen(true)}
+                  title="Broadcast Message to All Members"
+                  className="flex items-center justify-center w-9 h-9 rounded-xl transition-colors hover:bg-black/5 dark:hover:bg-white/10"
+                  style={{ color: textMuted }}
+                >
+                  <Megaphone className="w-[18px] h-[18px]" />
+                </button>
+              )}
+              <MessagesDropdown />
+              <NotificationsDropdown />
+
+              {broadcastOpen && (
+                <AdminBroadcastModal
+                  onClose={() => setBroadcastOpen(false)}
+                  isLight={isLight}
+                  getToken={getToken}
+                />
+              )}
+
+              {/* Profile */}
+              <div ref={profileRef} className="relative">
+                <button
+                  onClick={() => {
+                    const next = !profileOpen
+                    if (next) broadcastHeaderMenuOpen('profile')
+                    setProfileOpen(next)
+                  }}
+                  title={user?.name}
+                  className={`flex items-center gap-1.5 p-1 pr-1.5 rounded-xl transition-colors ${
+                    profileOpen ? 'bg-slate-200/70 dark:bg-slate-800' : 'hover:bg-slate-100 dark:hover:bg-slate-800/60'
+                  }`}
+                >
+                  <UserAvatar name={user?.name} imageUrl={user?.picture} size="xs" ring className="shrink-0" />
+                  <ChevronDown
+                    className={`hidden sm:block w-3.5 h-3.5 transition-transform duration-200 shrink-0 ${profileOpen ? 'rotate-180' : ''}`}
+                    style={{ color: textMuted }}
+                  />
+                </button>
+
+                {profileOpen && (
+                  <div
+                    className="absolute z-50 w-64 rounded-2xl shadow-2xl overflow-hidden top-[calc(100%+8px)] right-0"
+                    style={{ backgroundColor: isLight ? '#ffffff' : '#0d1626', border: `1px solid ${inputBorder}` }}
+                  >
+                    <div className="px-4 py-3.5 flex items-center gap-3" style={{ borderBottom: `1px solid ${inputBorder}` }}>
+                      <UserAvatar name={user?.name} imageUrl={user?.picture} size="sm" />
+                      <div className="min-w-0">
+                        <p className="text-sm font-bold truncate" style={{ color: textPrimary }}>{formatPersonName(user?.name ?? '') || 'User'}</p>
+                        <p className="text-[11px] truncate" style={{ color: textMuted }}>{user?.email}</p>
+                      </div>
+                    </div>
+
+                    <div className="py-1.5">
+                      <Link
+                        to="/profile"
+                        onClick={() => setProfileOpen(false)}
+                        className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition-colors hover:bg-slate-100 dark:hover:bg-slate-800/60"
+                        style={{ color: textPrimary }}
+                      >
+                        <UserCircle className="w-4 h-4 text-green-500" />
+                        My Profile
+                      </Link>
+                      {isPortalStaffUser(user?.role) && (
+                        <Link
+                          to="/profile?tab=history"
+                          onClick={() => setProfileOpen(false)}
+                          className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition-colors hover:bg-slate-100 dark:hover:bg-slate-800/60"
+                          style={{ color: textPrimary }}
+                        >
+                          <History className="w-4 h-4 text-green-500" />
+                          Ticket History
+                        </Link>
+                      )}
+                      {isWarrantyRegistrar(user?.jobTitle) && (
+                        <Link
+                          to="/profile?tab=registrations"
+                          onClick={() => setProfileOpen(false)}
+                          className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition-colors hover:bg-slate-100 dark:hover:bg-slate-800/60"
+                          style={{ color: textPrimary }}
+                        >
+                          <ClipboardCheck className="w-4 h-4 text-green-500" />
+                          Registered Tickets
+                        </Link>
+                      )}
+                      {isSystemAdmin(user?.role) && (
+                        <Link
+                          to="/profile?tab=users"
+                          onClick={() => setProfileOpen(false)}
+                          className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition-colors hover:bg-slate-100 dark:hover:bg-slate-800/60"
+                          style={{ color: textPrimary }}
+                        >
+                          <Shield className="w-4 h-4 text-green-500" />
+                          User Management
+                        </Link>
+                      )}
+                      <Link
+                        to="/profile?tab=privacy"
+                        onClick={() => setProfileOpen(false)}
+                        className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition-colors hover:bg-slate-100 dark:hover:bg-slate-800/60"
+                        style={{ color: textPrimary }}
+                      >
+                        <Settings className="w-4 h-4 text-green-500" />
+                        Settings &amp; Privacy
+                      </Link>
+
+                      <div className="mx-3 my-1.5" style={{ borderTop: `1px solid ${inputBorder}` }} />
+
+                      <div className="px-4 py-2.5">
+                        <div className="flex items-center gap-3 text-sm font-medium mb-2" style={{ color: textPrimary }}>
+                          {isLight ? <Sun className="w-4 h-4" style={{ color: '#F59E0B' }} /> : <Moon className="w-4 h-4 text-green-500" />}
+                          Appearance
+                        </div>
+                        <div className="grid grid-cols-3 gap-1 p-1 rounded-xl" style={{ backgroundColor: hoverBg, border: `1px solid ${inputBorder}` }}>
+                          {([['auto', 'Auto'], ['light', 'Light'], ['dark', 'Dark']] as const).map(([mode, label]) => (
+                            <button
+                              key={mode}
+                              type="button"
+                              onClick={() => setThemeMode(mode)}
+                              className="py-1.5 rounded-lg text-xs font-bold transition-colors"
+                              style={themeMode === mode ? { backgroundColor: '#10B981', color: '#fff' } : { color: textMuted }}
+                            >
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                        {themeMode === 'auto' && (
+                          <p className="text-[10px] mt-1.5" style={{ color: textMuted }}>Follows your device ({isLight ? 'light' : 'dark'} now)</p>
+                        )}
+                      </div>
+
+                      <div className="mx-3 my-1.5" style={{ borderTop: `1px solid ${inputBorder}` }} />
+
+                      <button
+                        type="button"
+                        onClick={() => { setProfileOpen(false); logout() }}
+                        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-left transition-colors hover:bg-slate-100 dark:hover:bg-slate-800/60 hover:text-red-500"
+                        style={{ color: textMuted }}
+                      >
+                        <LogOut className="w-4 h-4" />
+                        Logout
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div id="header-toolbar-slot" className="w-full min-w-0 max-w-full" />
+        </header>
+
+        {/* ── Page Content ───────────────────────────────── */}
+        <main
+          ref={mainContentRef}
+          style={{ overscrollBehavior: 'none', touchAction: 'pan-y' }}
+          className={
+            currentPage === 'DDRM'
+              ? "flex-1 flex flex-col min-h-0 overflow-hidden relative p-2 md:p-3"
+              : (currentPage === 'Payouts' || currentPage === 'Payroll')
+                ? "flex-1 flex flex-col min-h-0 overflow-hidden relative px-1.5 py-2 md:px-2 md:py-2.5"
+              : (currentPage === 'Relays' || currentPage === 'Bookings' || location.pathname === '/bookings' || currentPage === 'My Tickets' || currentPage === 'Schedules' || currentPage === 'Archives' || currentPage === 'Search' || currentPage === 'Messages' || location.pathname.startsWith('/messages'))
+                ? "flex-1 flex flex-col min-h-0 overflow-hidden relative p-0"
+                : (currentPage === 'Request Forms' || currentPage === 'Operations Forms')
+                  ? "flex-1 overflow-y-auto px-6 py-6 relative"
+                  : "flex-1 overflow-y-auto p-4 sm:p-5 md:p-8 relative"
+          }
+          style={{
+            overscrollBehavior: 'none',
+            touchAction: 'pan-y',
+            paddingLeft: 'env(safe-area-inset-left, 0px)',
+            paddingRight: 'env(safe-area-inset-right, 0px)',
+            ...( (currentPage === 'Relays' || currentPage === 'Bookings' || location.pathname === '/bookings' || currentPage === 'My Tickets' || currentPage === 'Schedules' || currentPage === 'Archives' || currentPage === 'Search' || currentPage === 'Messages' || currentPage === 'DDRM' || currentPage === 'Payouts' || currentPage === 'Payroll' || location.pathname.startsWith('/messages'))
+              ? { paddingBottom: 'env(safe-area-inset-bottom, 0px)' }
+              : { paddingBottom: 'max(1.5rem, calc(1.5rem + env(safe-area-inset-bottom, 0px)))' }
+            )
+          }}
+        >
+          {/* Subtle ambient gradient */}
+          {!isLight && (
+            <div className="pointer-events-none fixed top-0 right-0 w-[500px] h-[500px] opacity-[0.06]"
+                 style={{
+                   background: 'radial-gradient(circle, #10B981 0%, transparent 70%)',
+                   filter: 'blur(80px)',
+                   zIndex: 0,
+                 }} />
+          )}
+          <div className={`relative z-10 ${(currentPage === 'Relays' || currentPage === 'Bookings' || location.pathname === '/bookings' || currentPage === 'My Tickets' || currentPage === 'Schedules' || currentPage === 'Archives' || currentPage === 'Search' || currentPage === 'DDRM' || currentPage === 'Payouts' || currentPage === 'Payroll' || currentPage === 'Messages' || location.pathname.startsWith('/messages')) ? 'flex flex-col flex-1 min-h-0 h-full w-full' : ''}`}>
+            {/* Do not key Outlet by pathname — that remounts Schedules on every nav and forces a reload spinner. */}
+            <Suspense fallback={
+              <div className="flex items-center justify-center min-h-[50vh] w-full transition-opacity duration-200">
+                <AshcolLoader />
+              </div>
+            }>
+              <Outlet context={{ setSidebarOpen, globalBranchId }} />
+            </Suspense>
+          </div>
+        </main>
+      </div>
+
+      <NotificationDetailModal />
+
+      <FloatingChatWindow />
+    </div>
+  )
+}

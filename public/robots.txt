@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /
+Disallow: /dashboard
+Disallow: /tickets
+Disallow: /customers
+Disallow: /staff
+Disallow: /profile
+
+Sitemap: https://ashcolservices.com/sitemap.xml
