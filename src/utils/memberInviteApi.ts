@@ -39,8 +39,12 @@ function authHeaders(): Record<string, string> {
   return { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }
 }
 
-/** Public site that hosts the open sign-up page (the landing domain). */
-export const PUBLIC_SITE_URL = (import.meta.env.VITE_PUBLIC_SITE_URL as string | undefined)?.replace(/\/$/, '') || 'https://ashcol.com.ph'
+/**
+ * Host that serves the open sign-up page. Defaults to wherever the admin is (the portal), because that is the
+ * deployment that actually contains /register; set VITE_PUBLIC_SITE_URL once ashcol.com.ph serves it too.
+ */
+export const PUBLIC_SITE_URL = (import.meta.env.VITE_PUBLIC_SITE_URL as string | undefined)?.replace(/\/$/, '')
+  || (typeof window !== 'undefined' ? window.location.origin : 'https://portal.ashcol.com.ph')
 
 export const OPEN_REGISTER_URL = `${PUBLIC_SITE_URL}/register`
 
