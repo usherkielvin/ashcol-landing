@@ -237,12 +237,12 @@ interface FieldProps {
 /** Label + input shell with an icon, a green tick once valid, and an inline error. Module-level so inputs never remount. */
 function Field({ label, icon, error, hint, valid, optional, t, children }: FieldProps) {
   return (
-    <div>
+    <div className="min-w-0">
       <label className="flex items-center justify-between text-[12px] font-semibold mb-1.5 md:mb-2" style={{ color: t.textMuted }}>
         <span>{label}</span>
         {optional && <span className="text-[10px] font-semibold uppercase tracking-wider opacity-70">Optional</span>}
       </label>
-      <div className="relative">
+      <div className="relative min-w-0">
         {icon && <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">{icon}</span>}
         {children}
         {valid && !error && (
@@ -442,10 +442,13 @@ export default function JoinTeam() {
     }
   }
 
+  const canAutoFocus = typeof window !== 'undefined' && window.innerWidth >= 768
   const inputCls = (hasError?: string, padRight = true) =>
-    `w-full border rounded-xl pl-11 ${padRight ? 'pr-11' : 'pr-4'} py-3 md:py-3.5 text-base md:text-sm placeholder-slate-400 focus:outline-none focus:ring-2 transition-all ${
+    `w-full min-w-0 border rounded-xl pl-11 ${padRight ? 'pr-11' : 'pr-4'} py-3 md:py-3.5 text-base md:text-sm placeholder-slate-400 focus:outline-none focus:ring-2 transition-all ${
       hasError ? 'focus:border-red-400 focus:ring-red-400/20' : 'focus:border-[#10B981] focus:ring-[#10B981]/20'
     }`
+  const dateCls = (hasError?: string) =>
+    `${inputCls(hasError)} block min-w-0 max-w-full appearance-none min-h-[50px] text-left [&::-webkit-date-and-time-value]:text-left [&::-webkit-date-and-time-value]:min-h-[1.5em]`
   const inputStyle = (hasError?: string) => ({
     backgroundColor: inputBg, borderColor: hasError ? '#F87171' : inputBorder, color: inputText,
   })
@@ -614,7 +617,6 @@ export default function JoinTeam() {
                 {needsBranch && (
                   <Field label="Branch" icon={<Building2 className="w-4 h-4" />} error={err('branchId')} valid={ok('branchId')} t={t}>
                     <select
-                      autoFocus
                       value={form.branchId}
                       onChange={e => { set('branchId', e.target.value); touch('branchId') }}
                       onBlur={() => touch('branchId')}
@@ -629,7 +631,7 @@ export default function JoinTeam() {
                 <div className="grid grid-cols-2 gap-3">
                   <Field label="First name" icon={<User className="w-4 h-4" />} error={err('firstName')} valid={ok('firstName')} t={t}>
                     <input
-                      autoFocus={!needsBranch}
+                      autoFocus={canAutoFocus && !needsBranch}
                       value={form.firstName}
                       onChange={e => set('firstName', e.target.value.replace(/[^a-zA-ZÀ-ÿ\s.'-]/g, ''))}
                       onBlur={() => { set('firstName', titleCase(form.firstName)); touch('firstName') }}
@@ -665,7 +667,7 @@ export default function JoinTeam() {
                 <Field label="Login email" icon={<Mail className="w-4 h-4" />} error={err('email')} valid={ok('email')}
                   hint="You'll sign in with this, and we'll send a verification code to it." t={t}>
                   <input
-                    autoFocus type="email" inputMode="email" value={form.email}
+                    autoFocus={canAutoFocus} type="email" inputMode="email" value={form.email}
                     onChange={e => set('email', e.target.value.trim().toLowerCase())}
                     onBlur={() => touch('email')}
                     placeholder="juan@ashcol.com.ph" autoComplete="email"
@@ -705,9 +707,9 @@ export default function JoinTeam() {
                 <Field label="Birthdate" icon={<Calendar className="w-4 h-4" />} error={err('birthDate')} valid={ok('birthDate')}
                   hint={`You must be at least ${MIN_AGE}.`} t={t}>
                   <input
-                    autoFocus type="date" value={form.birthDate} max={maxBirth} min="1940-01-01"
+                    type="date" value={form.birthDate} max={maxBirth} min="1940-01-01"
                     onChange={e => set('birthDate', e.target.value)} onBlur={() => touch('birthDate')}
-                    autoComplete="bday" className={inputCls(err('birthDate'))} style={inputStyle(err('birthDate'))}
+                    autoComplete="bday" className={dateCls(err('birthDate'))} style={inputStyle(err('birthDate'))}
                   />
                 </Field>
                 <Field label="Date hired" icon={<Calendar className="w-4 h-4" />} error={err('dateHired')} valid={ok('dateHired')}
@@ -715,7 +717,7 @@ export default function JoinTeam() {
                   <input
                     type="date" value={form.dateHired} min="1990-01-01"
                     onChange={e => set('dateHired', e.target.value)} onBlur={() => touch('dateHired')}
-                    className={inputCls(err('dateHired'))} style={inputStyle(err('dateHired'))}
+                    className={dateCls(err('dateHired'))} style={inputStyle(err('dateHired'))}
                   />
                 </Field>
               </>
@@ -725,7 +727,7 @@ export default function JoinTeam() {
               <>
                 <Field label="Password" icon={<Lock className="w-4 h-4" />} error={err('password')} t={t}>
                   <input
-                    autoFocus type={showPw ? 'text' : 'password'} value={form.password}
+                    autoFocus={canAutoFocus} type={showPw ? 'text' : 'password'} value={form.password}
                     onChange={e => set('password', e.target.value)} onBlur={() => touch('password')}
                     placeholder="At least 8 characters" autoComplete="new-password" maxLength={64}
                     className={inputCls(err('password'))} style={inputStyle(err('password'))}
@@ -781,7 +783,7 @@ export default function JoinTeam() {
                 </div>
                 <div>
                   <input
-                    autoFocus
+                    autoFocus={canAutoFocus}
                     value={form.code}
                     onChange={e => { set('code', e.target.value.replace(/\D/g, '').slice(0, 6)); touch('code') }}
                     inputMode="numeric"
