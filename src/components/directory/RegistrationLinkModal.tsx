@@ -5,6 +5,7 @@ import {
   buildMemberInviteUrl,
   createMemberInvite,
   listMemberInvites,
+  OPEN_REGISTER_URL,
   revokeMemberInvite,
   type MemberInviteLink,
 } from '../../utils/memberInviteApi'
@@ -78,13 +79,9 @@ export default function RegistrationLinkModal({ open, onClose, branches, tokens,
   }
 
   const handleCopyForBranch = async (forceNew: boolean) => {
-    if (!branchId) {
-      onToast('error', 'Choose a branch first.')
-      return
-    }
     setBusy(true)
     try {
-      const link = await createMemberInvite(branchId, days, forceNew)
+      const link = await createMemberInvite(branchId || null, days, forceNew)
       const ok = await copyToClipboard(buildMemberInviteUrl(link.token))
       if (ok) {
         flashCopied(link.id)
@@ -112,7 +109,7 @@ export default function RegistrationLinkModal({ open, onClose, branches, tokens,
   const handleRevoke = async (link: MemberInviteLink) => {
     try {
       await revokeMemberInvite(link.id)
-      onToast('success', `${link.branchName} link revoked.`)
+      onToast('success', `${link.branchName ?? 'Any-branch'} link revoked.`)
       await refresh()
     } catch (err) {
       onToast('error', err instanceof Error ? err.message : 'Could not revoke the link.')
@@ -156,7 +153,7 @@ export default function RegistrationLinkModal({ open, onClose, branches, tokens,
                 className="w-full rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-emerald-500/20"
                 style={fieldStyle}
               >
-                <option value="">Select branch</option>
+                <option value="">Any branch — member picks</option>
                 {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
               </select>
             </label>
@@ -175,7 +172,7 @@ export default function RegistrationLinkModal({ open, onClose, branches, tokens,
 
           <button
             type="button"
-            disabled={busy || !branchId}
+            disabled={busy}
             onClick={() => handleCopyForBranch(false)}
             className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-black uppercase tracking-wider text-white transition-all active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed hover:opacity-90"
             style={{ backgroundColor: '#10B981' }}
@@ -183,6 +180,30 @@ export default function RegistrationLinkModal({ open, onClose, branches, tokens,
             {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Copy className="w-4 h-4" />}
             Copy registration link
           </button>
+
+          <div className="flex items-center gap-3 rounded-xl px-3 py-2.5 border" style={{ borderColor: border, backgroundColor: inputBg }}>
+            <Link2 className="w-4 h-4 shrink-0 text-blue-400" />
+            <div className="min-w-0 flex-1">
+              <div className="text-sm font-bold" style={{ color: textPrimary }}>Public sign-up page</div>
+              <div className="text-[11px] truncate" style={{ color: textMuted }}>{OPEN_REGISTER_URL} · never expires, members pick their branch</div>
+            </div>
+            <button
+              type="button"
+              onClick={async () => {
+                if (await copyToClipboard(OPEN_REGISTER_URL)) {
+                  flashCopied('open')
+                  onToast('success', 'Public sign-up link copied.')
+                } else {
+                  onToast('error', 'Your browser blocked copying.')
+                }
+              }}
+              className="p-2 rounded-lg hover:bg-slate-500/10"
+              style={{ color: copiedId === 'open' ? '#10B981' : textMuted }}
+              title="Copy public sign-up link"
+            >
+              {copiedId === 'open' ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+            </button>
+          </div>
 
           <div>
             <div className="text-[11px] font-black uppercase tracking-wider mb-2" style={{ color: textMuted }}>Active links</div>
@@ -202,7 +223,7 @@ export default function RegistrationLinkModal({ open, onClose, branches, tokens,
                   >
                     <Link2 className="w-4 h-4 shrink-0 text-emerald-500" />
                     <div className="min-w-0 flex-1">
-                      <div className="text-sm font-bold truncate" style={{ color: textPrimary }}>{l.branchName}</div>
+                      <div className="text-sm font-bold truncate" style={{ color: textPrimary }}>{l.branchName ?? 'Any branch'}</div>
                       <div className="text-[11px]" style={{ color: textMuted }}>
                         Expires {fmtDate(l.expiresAt)} · {l.useCount} {l.useCount === 1 ? 'sign-up' : 'sign-ups'}
                       </div>

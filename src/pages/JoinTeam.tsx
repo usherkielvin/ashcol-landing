@@ -6,12 +6,14 @@ import {
 } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 import {
-  registerMember, resolveMemberInvite, sendMemberSignupCode, type MemberInviteView,
+  fetchPublicBranches, isOpenSignupAvailable, registerMember, resolveMemberInvite, sendMemberSignupCode,
+  type MemberInviteView,
 } from '../utils/memberInviteApi'
 import logoImg from '../assets/ash-logo.jpg'
 import splitBgImg from '../assets/split_screen_bg.png'
 
 interface Form {
+  branchId: string
   name: string
   nickname: string
   email: string
@@ -28,7 +30,7 @@ interface Form {
 type Errors = Partial<Record<keyof Form, string>>
 
 const EMPTY: Form = {
-  name: '', nickname: '', email: '', personalEmail: '', samePersonal: true, phone: '',
+  branchId: '', name: '', nickname: '', email: '', personalEmail: '', samePersonal: true, phone: '',
   birthDate: '', dateHired: '', password: '', confirm: '', code: '',
 }
 
@@ -48,9 +50,10 @@ function isoDate(d: Date): string {
   return d.toISOString().split('T')[0]
 }
 
-function validateStep(step: number, f: Form): Errors {
+function validateStep(step: number, f: Form, needsBranch: boolean): Errors {
   const e: Errors = {}
   if (step === 1) {
+    if (needsBranch && !f.branchId) e.branchId = 'Choose your branch.'
     if (f.name.trim().length < 2) e.name = 'Enter your full name.'
   }
   if (step === 2) {
@@ -93,9 +96,9 @@ function passwordStrength(pw: string): { score: number; label: string; color: st
   return { score, ...meta[pw.length === 0 ? 0 : score] }
 }
 
-function loadDraft(token: string): { form: Form; step: number } {
+function loadDraft(draftKey: string): { form: Form; step: number } {
   try {
-    const raw = sessionStorage.getItem(`${DRAFT_KEY}:${token}`)
+    const raw = sessionStorage.getItem(`${DRAFT_KEY}:${draftKey}`)
     if (raw) {
       const parsed = JSON.parse(raw)
       // Password and code are never persisted, so a refresh never lands past the password page.
@@ -106,14 +109,18 @@ function loadDraft(token: string): { form: Form; step: number } {
 }
 
 export default function JoinTeam() {
-  const { token = '' } = useParams()
+  // No token = the open /register page; the member always picks their own branch there.
+  const { token: tokenParam } = useParams()
+  const token = tokenParam ?? null
+  const draftKey = token ?? 'open'
   const { theme, toggleTheme } = useTheme()
   const isLight = theme === 'light'
 
   const [invite, setInvite] = useState<MemberInviteView | null>(null)
+  const [branches, setBranches] = useState<{ id: string; name: string }[]>([])
   const [linkState, setLinkState] = useState<'loading' | 'ok' | 'dead' | 'error'>('loading')
-  const [form, setForm] = useState<Form>(() => loadDraft(token).form)
-  const [step, setStep] = useState<number>(() => loadDraft(token).step)
+  const [form, setForm] = useState<Form>(() => loadDraft(draftKey).form)
+  const [step, setStep] = useState<number>(() => loadDraft(draftKey).step)
   const [errors, setErrors] = useState<Errors>({})
   const [serverError, setServerError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -132,7 +139,10 @@ export default function JoinTeam() {
 
   useEffect(() => {
     let cancelled = false
-    resolveMemberInvite(token)
+    const lookup = token
+      ? resolveMemberInvite(token)
+      : isOpenSignupAvailable().then(open => (open ? { branchName: null, expiresAt: '' } : null))
+    lookup
       .then(view => {
         if (cancelled) return
         setInvite(view)
@@ -142,14 +152,20 @@ export default function JoinTeam() {
     return () => { cancelled = true }
   }, [token])
 
+  const needsBranch = linkState === 'ok' && !invite?.branchName
+  useEffect(() => {
+    if (!needsBranch) return
+    fetchPublicBranches().then(setBranches).catch(() => setBranches([]))
+  }, [needsBranch])
+
   useEffect(() => {
     if (done) return
     try {
       // Secrets (password, code) are deliberately left out of the draft.
       const safe = { ...form, password: '', confirm: '', code: '' }
-      sessionStorage.setItem(`${DRAFT_KEY}:${token}`, JSON.stringify({ form: safe, step: Math.min(step, 4) }))
+      sessionStorage.setItem(`${DRAFT_KEY}:${draftKey}`, JSON.stringify({ form: safe, step: Math.min(step, 4) }))
     } catch { /* ignore */ }
-  }, [form, step, token, done])
+  }, [form, step, draftKey, done])
 
   useEffect(() => {
     if (cooldown <= 0) return
@@ -178,7 +194,7 @@ export default function JoinTeam() {
   }
 
   const goNext = async () => {
-    const errs = validateStep(step, form)
+    const errs = validateStep(step, form, needsBranch)
     setErrors(errs)
     if (Object.keys(errs).length > 0) return
     setServerError('')
@@ -209,10 +225,11 @@ export default function JoinTeam() {
         phone: form.phone.replace(/[\s-]/g, ''),
         birthDate: form.birthDate,
         dateHired: form.dateHired || null,
+        branchId: needsBranch ? form.branchId : undefined,
         password: form.password,
         verificationCode: form.code,
       })
-      try { sessionStorage.removeItem(`${DRAFT_KEY}:${token}`) } catch { /* ignore */ }
+      try { sessionStorage.removeItem(`${DRAFT_KEY}:${draftKey}`) } catch { /* ignore */ }
       setDone(true)
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Could not create your account.'
@@ -267,7 +284,7 @@ export default function JoinTeam() {
           <p className="text-[#A2B7D0] text-sm leading-relaxed">
             Create your member account in a few quick steps. An admin reviews every sign-up before you can log in.
           </p>
-          {invite && (
+          {invite?.branchName && (
             <div className="text-[11px] font-semibold text-[#64748b] tracking-wider uppercase pt-4 border-t border-[#1E2D48]/40">
               Registering for <span className="text-[#10B981]">{invite.branchName}</span>
             </div>
@@ -308,11 +325,11 @@ export default function JoinTeam() {
           <Clock className="w-8 h-8 text-red-400" />
         </div>
         <h1 className="text-2xl font-black" style={{ color: textPrimary }}>
-          {linkState === 'dead' ? 'This link is no longer active' : 'Could not open this link'}
+          {linkState === 'dead' ? (token ? 'This link is no longer active' : 'Registration is closed') : 'Could not open this page'}
         </h1>
         <p className="text-sm max-w-xs" style={{ color: textMuted }}>
           {linkState === 'dead'
-            ? 'Ask your admin for a new registration link.'
+            ? (token ? 'Ask your admin for a new registration link.' : 'Ask your admin for a registration link.')
             : 'Check your connection and refresh the page.'}
         </p>
         <Link to="/login" className="text-[#10B981] font-bold text-sm hover:underline mt-2">Go to login</Link>
@@ -382,7 +399,7 @@ export default function JoinTeam() {
     <div onKeyDown={onKeyDown}>
       <div className="flex flex-col items-center mb-8 lg:hidden">
         <img src={logoImg} alt="ASHCOL Logo" className="w-14 h-14 object-contain rounded-2xl shadow-[0_0_24px_rgba(16,185,129,0.3)] mb-3" />
-        {invite && <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: textMuted }}>Joining {invite.branchName}</p>}
+        {invite?.branchName && <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: textMuted }}>Joining {invite.branchName}</p>}
       </div>
 
       <div className="mb-8">
@@ -405,6 +422,21 @@ export default function JoinTeam() {
         <div className="flex flex-col gap-5">
           {step === 1 && (
             <>
+              {needsBranch && (
+                <div>
+                  <label className="block text-[12px] font-semibold mb-2" style={{ color: textMuted }}>Branch</label>
+                  <select
+                    value={form.branchId}
+                    onChange={e => set('branchId', e.target.value)}
+                    className="w-full border rounded-xl px-4 py-3.5 text-sm focus:outline-none focus:ring-2 transition-all focus:border-[#10B981] focus:ring-[#10B981]/20"
+                    style={inputStyle(errors.branchId)}
+                  >
+                    <option value="">Select your branch</option>
+                    {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                  </select>
+                  {errors.branchId && <p className="text-[12px] text-red-400 mt-1.5">{errors.branchId}</p>}
+                </div>
+              )}
               {field('Full name', <User className="w-4 h-4" />,
                 <input autoFocus value={form.name} onChange={e => set('name', e.target.value.replace(/[^a-zA-ZÀ-ÿ\s.'-]/g, ''))}
                   placeholder="Juan Dela Cruz" autoComplete="name" className={inputCls(errors.name)} style={inputStyle(errors.name)} />,
@@ -526,6 +558,7 @@ export default function JoinTeam() {
           {step === 6 && (
             <>
               <div className="rounded-2xl border px-5" style={{ backgroundColor: cardBg, borderColor: inputBorder }}>
+                {needsBranch && reviewRow('Branch', branches.find(b => b.id === form.branchId)?.name ?? '', 1)}
                 {reviewRow('Name', form.nickname.trim() ? `${form.name.trim()} (${form.nickname.trim()})` : form.name.trim(), 1)}
                 {reviewRow('Login email', form.email, 2)}
                 {reviewRow('Personal email', form.samePersonal ? form.email : form.personalEmail, 2)}
@@ -537,7 +570,7 @@ export default function JoinTeam() {
                 <ShieldCheck className="w-5 h-5 text-[#10B981] shrink-0 mt-0.5" />
                 <p className="text-[13px] leading-relaxed" style={{ color: textMuted }}>
                   Your account is created as a <strong style={{ color: textPrimary }}>Member</strong>
-                  {invite ? <> of <strong style={{ color: textPrimary }}>{invite.branchName}</strong></> : null}.
+                  {(invite?.branchName ?? branches.find(b => b.id === form.branchId)?.name) ? <> of <strong style={{ color: textPrimary }}>{invite?.branchName ?? branches.find(b => b.id === form.branchId)?.name}</strong></> : null}.
                   An admin approves it before you can log in.
                 </p>
               </div>

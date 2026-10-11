@@ -96,7 +96,7 @@ function wipeAuthCredentials({ keepRememberedEmail = false } = {}) {
 /** Tokenized payout share links (/payout/<token>) are opened by installers with no account. */
 const isPayoutSharePath = (pathname: string) => pathname.startsWith('/payout/')
 /** Member registration links (/join/<token>) are opened by new hires with no account yet. */
-const isJoinPath = (pathname: string) => pathname.startsWith('/join/')
+const isJoinPath = (pathname: string) => pathname.startsWith('/join/') || pathname === '/register'
 
 function isAuthPublicPath(pathname: string): boolean {
   if (AUTH_PUBLIC_PATHS.has(pathname)) return true

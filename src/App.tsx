@@ -125,6 +125,8 @@ export default function App() {
           <Route path="/payout/:token" element={<PayoutShare />} />
           {/* Public member registration — the admin-issued token in the path is the credential; no login. */}
           <Route path="/join/:token" element={<JoinTeam />} />
+          {/* Open staff sign-up (linked from the landing site) — members pick their branch; accounts stay pending approval. */}
+          <Route path="/register" element={<JoinTeam />} />
           {/* Portal Routes */}
           <Route element={<DashboardLayout />}>
             <Route path="/dashboard" element={<DashboardRedirect />} />
