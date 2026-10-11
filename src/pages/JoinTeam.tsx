@@ -216,15 +216,9 @@ function StepList({ current }: { current: number }) {
 /** Compact progress for phones, where the sidebar is hidden. */
 function MobileProgress({ current, t }: { current: number; t: Tokens }) {
   return (
-    <div className="md:hidden mb-3 shrink-0">
-      <div className="flex items-center justify-between mb-2">
-        <span className="text-[11px] font-bold uppercase tracking-wider text-[#10B981]">Step {current} of {STEPS.length}</span>
-        <span className="text-[11px] font-semibold" style={{ color: t.textMuted }}>{STEPS[current - 1].short}</span>
-      </div>
-      <div className="h-1.5 w-full rounded-full overflow-hidden" style={{ backgroundColor: t.inputBorder }}>
-        <div className="h-full rounded-full bg-gradient-to-r from-[#10B981] to-[#3B82F6] transition-all duration-500"
-          style={{ width: `${(current / STEPS.length) * 100}%` }} />
-      </div>
+    <div className="md:hidden mb-2 shrink-0 text-center" aria-label={`Step ${current} of ${STEPS.length}`}>
+      <span className="text-[12px] font-bold uppercase tracking-[0.18em] text-[#047857]">Step {current} of {STEPS.length}</span>
+      <span className="text-[12px] font-semibold" style={{ color: t.textMuted }}> · {STEPS[current - 1].short}</span>
     </div>
   )
 }
@@ -314,13 +308,13 @@ export default function JoinTeam() {
   }, [])
   const keyboardOpen = typeof window !== 'undefined' && window.innerWidth < 768 && baseHeight.current - vv.h > 120
 
-  const rightBg = isLight ? '#f1f5f9' : '#060B18'
+  const rightBg = isLight ? '#ffffff' : '#0b1120'
   const textPrimary = isLight ? '#0f172a' : '#E2E8F0'
   const textMuted = isLight ? '#64748b' : '#7A95B8'
-  const inputBg = isLight ? '#f8fafc' : 'rgba(15,26,46,0.8)'
-  const inputBorder = isLight ? '#cbd5e1' : '#243452'
+  const inputBg = isLight ? '#ffffff' : '#111a2e'
+  const inputBorder = isLight ? '#d7dee9' : '#243452'
   const inputText = isLight ? '#0f172a' : '#ffffff'
-  const cardBg = isLight ? '#ffffff' : 'rgba(15,26,46,0.55)'
+  const cardBg = isLight ? '#ffffff' : '#0f1729'
   const t: Tokens = { textPrimary, textMuted, inputBg, inputBorder, inputText, cardBg }
 
   useEffect(() => {
@@ -470,23 +464,9 @@ export default function JoinTeam() {
         @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important } }
       `}</style>
 
-      {/* Backdrop: dotted grid + two soft brand glows (no stock imagery) */}
-      <div className="absolute inset-0 pointer-events-none z-0" aria-hidden>
-        <div className="absolute inset-0" style={{
-          backgroundImage: `radial-gradient(${isLight ? 'rgba(15,23,42,0.09)' : 'rgba(148,163,184,0.10)'} 1px, transparent 1px)`,
-          backgroundSize: '22px 22px',
-          maskImage: 'radial-gradient(ellipse at 50% 30%, black 20%, transparent 75%)',
-          WebkitMaskImage: 'radial-gradient(ellipse at 50% 30%, black 20%, transparent 75%)',
-        }} />
-        <div className="absolute -top-40 -left-32 w-[520px] h-[520px] rounded-full"
-          style={{ background: 'radial-gradient(circle, rgba(16,185,129,0.20) 0%, transparent 70%)', filter: 'blur(50px)' }} />
-        <div className="absolute -bottom-48 -right-32 w-[560px] h-[560px] rounded-full"
-          style={{ background: 'radial-gradient(circle, rgba(59,130,246,0.18) 0%, transparent 70%)', filter: 'blur(60px)' }} />
-      </div>
-
       <header className={`relative z-10 shrink-0 items-center justify-center md:justify-between px-5 sm:px-8 py-3 md:py-5 max-w-[1040px] w-full mx-auto ${keyboardOpen ? 'hidden md:flex' : 'flex'}`}>
         <div className="flex items-center gap-3">
-          <img src={logoImg} alt="ASHCOL" className="w-11 h-11 md:w-10 md:h-10 object-contain rounded-xl shadow-md" />
+          <img src={logoImg} alt="ASHCOL" className="w-11 h-11 md:w-10 md:h-10 object-contain rounded-xl" />
           <span className="hidden md:inline font-black tracking-[0.25em] text-sm" style={{ color: textPrimary }}>ASHCOL</span>
         </div>
         <button
@@ -548,7 +528,7 @@ export default function JoinTeam() {
         </div>
         <Link
           to="/login"
-          className="mt-2 px-8 py-3.5 rounded-xl font-bold text-[15px] bg-[#10B981] hover:bg-emerald-400 text-[#060B18] shadow-[0_4px_24px_rgba(16,185,129,0.3)] transition-all"
+          className="mt-2 px-8 py-3.5 rounded-xl font-bold text-[15px] bg-[#047857] hover:bg-[#065f46] text-white transition-all"
         >
           Go to login
         </Link>
@@ -597,13 +577,11 @@ export default function JoinTeam() {
         style={{
           '--jc-bg': cardBg,
           '--jc-border': inputBorder,
-          '--jc-shadow': isLight ? '0 24px 60px rgba(15,23,42,0.10)' : '0 24px 60px rgba(0,0,0,0.45)',
+          '--jc-shadow': isLight ? '0 1px 3px rgba(15,23,42,0.06)' : 'none',
         } as React.CSSProperties}
       >
         <aside className="hidden md:flex flex-col justify-between p-8 relative overflow-hidden"
-          style={{ background: 'linear-gradient(165deg, #0b3d2e 0%, #0a3552 100%)' }}>
-          <div aria-hidden className="absolute -top-24 -right-24 w-64 h-64 rounded-full"
-            style={{ background: 'radial-gradient(circle, rgba(52,211,153,0.28) 0%, transparent 70%)' }} />
+          style={{ backgroundColor: '#0b3d2e' }}>
           <div className="relative">
             <h2 className="text-[26px] font-black leading-tight text-white">Join the ASHCOL team</h2>
             <p className="text-[13px] mt-2 mb-8 leading-relaxed" style={{ color: 'rgba(255,255,255,0.65)' }}>
@@ -710,8 +688,7 @@ export default function JoinTeam() {
                     />
                   </Field>
                 )}
-                <Field label="Mobile number" icon={<Phone className="w-4 h-4" />} error={err('phone')} valid={ok('phone')}
-                  hint="Philippine mobile, e.g. 0917 123 4567." t={t}>
+                <Field label="Mobile number" icon={<Phone className="w-4 h-4" />} error={err('phone')} valid={ok('phone')} t={t}>
                   <input
                     type="tel" inputMode="tel" value={form.phone}
                     onChange={e => set('phone', e.target.value.replace(/[^0-9+\s-]/g, ''))}
@@ -884,7 +861,7 @@ export default function JoinTeam() {
               className={`flex-1 flex items-center justify-center gap-2 py-3.5 md:py-4 rounded-xl font-bold text-[15px] transition-all ${
                 busy || stepBlocked
                   ? 'cursor-not-allowed'
-                  : 'bg-gradient-to-r from-[#10B981] to-[#0ea5a4] text-[#04211a] shadow-[0_4px_24px_rgba(16,185,129,0.3)] hover:shadow-[0_4px_32px_rgba(16,185,129,0.45)] hover:brightness-110 active:scale-[0.99]'
+                  : 'bg-[#047857] hover:bg-[#065f46] text-white active:scale-[0.99]'
               }`}
               style={busy || stepBlocked ? { backgroundColor: inputBorder, color: textMuted, opacity: 0.8 } : undefined}
             >
